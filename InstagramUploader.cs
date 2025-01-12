@@ -2,6 +2,7 @@ using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
 using System;
 using System.Threading;
+using System.Threading.Tasks;
 
 public class InstagramUploader
 {
@@ -14,7 +15,7 @@ public class InstagramUploader
         _password = password;
     }
 
-    public void UploadVideo(string filePath, string caption)
+    public async Task UploadVideoAsync(string filePath, string caption)
     {
         var options = new ChromeOptions();
         options.AddArgument("--headless");
@@ -26,7 +27,7 @@ public class InstagramUploader
             {
                 driver.Navigate().GoToUrl("https://www.instagram.com/accounts/login/");
 
-                Thread.Sleep(2000); // Wait for the page to load
+                await Task.Delay(2000); // Wait for the page to load
 
                 // Login
                 var usernameField = driver.FindElement(By.Name("username"));
@@ -37,7 +38,7 @@ public class InstagramUploader
                 passwordField.SendKeys(_password);
                 loginButton.Click();
 
-                Thread.Sleep(5000); // Wait for login to complete
+                await Task.Delay(5000); // Wait for login to complete
 
                 // Handle "Save Your Login Info?" popup if it appears
                 try
@@ -47,7 +48,7 @@ public class InstagramUploader
                 }
                 catch (NoSuchElementException) { }
 
-                Thread.Sleep(2000); // Wait for any popups to close
+                await Task.Delay(2000); // Wait for any popups to close
 
                 // Handle "Turn on Notifications" popup if it appears
                 try
@@ -57,18 +58,18 @@ public class InstagramUploader
                 }
                 catch (NoSuchElementException) { }
 
-                Thread.Sleep(2000); // Wait for any popups to close
+                await Task.Delay(2000); // Wait for any popups to close
 
                 // Go to upload page
                 driver.Navigate().GoToUrl("https://www.instagram.com/create/style/");
 
-                Thread.Sleep(2000); // Wait for the page to load
+                await Task.Delay(2000); // Wait for the page to load
 
                 // Upload video
                 var fileInput = driver.FindElement(By.XPath("//input[@type='file']"));
                 fileInput.SendKeys(filePath);
 
-                Thread.Sleep(5000); // Wait for the video to upload
+                await Task.Delay(5000); // Wait for the video to upload
 
                 // Add caption
                 var captionField = driver.FindElement(By.XPath("//textarea[@aria-label='Write a caption…']"));
@@ -78,7 +79,7 @@ public class InstagramUploader
                 var shareButton = driver.FindElement(By.XPath("//button[contains(text(), 'Share')]"));
                 shareButton.Click();
 
-                Thread.Sleep(5000); // Wait for the video to be shared
+                await Task.Delay(5000); // Wait for the video to be shared
             }
             finally
             {

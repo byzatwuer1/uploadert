@@ -1,4 +1,8 @@
-﻿namespace VideoUploaderScheduler
+﻿using System;
+using System.Drawing; // Make sure to include this namespace
+using System.Windows.Forms;
+
+namespace VideoUploaderScheduler
 {
     partial class Form1 : System.Windows.Forms.Form
     {
@@ -77,7 +81,7 @@
             browseButton.Location = new Point(172, 116);
             browseButton.Size = new Size(40, 20);
             browseButton.Text = "...";
-            browseButton.Click += BrowseButton_Click;
+            browseButton.Click += new EventHandler(BrowseButton_Click);
 
             // Title
             titleTextBox.Location = new Point(12, 142);
@@ -116,7 +120,7 @@
             scheduleButton.Location = new Point(12, 332);
             scheduleButton.Size = new Size(200, 23);
             scheduleButton.Text = "Schedule Upload";
-            scheduleButton.Click += ScheduleButton_Click;
+            scheduleButton.Click += new EventHandler(ScheduleButton_Click);
 
             // Status Label
             statusLabel.Location = new Point(12, 358);
@@ -143,13 +147,48 @@
                 scheduleButton,
                 statusLabel
             });
-            
+
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             Name = "Form1";
             Text = "Video Uploader Scheduler";
             ResumeLayout(false);
             PerformLayout();
+        }
+
+        private void BrowseButton_Click(object sender, EventArgs e)
+        {
+            using (OpenFileDialog openFileDialog = new OpenFileDialog())
+            {
+                openFileDialog.Filter = "Video files (*.mp4;*.avi;*.mov)|*.mp4;*.avi;*.mov|All files (*.*)|*.*";
+                if (openFileDialog.ShowDialog() == DialogResult.OK)
+                {
+                    filePathTextBox.Text = openFileDialog.FileName;
+                }
+            }
+        }
+
+        private void ScheduleButton_Click(object sender, EventArgs e)
+        {
+            // Collect data from form fields
+            var uploadInfo = new UploadInfo
+            {
+                FilePath = filePathTextBox.Text,
+                Title = titleTextBox.Text,
+                Description = descriptionTextBox.Text,
+                Platform = platformComboBox.SelectedItem.ToString(),
+                ScheduledTime = dateTimePicker.Value.Date + timePicker.Value.TimeOfDay,
+                YouTubeUsername = youtubeUsernameTextBox.Text,
+                YouTubePassword = youtubePasswordTextBox.Text,
+                InstagramUsername = instagramUsernameTextBox.Text,
+                InstagramPassword = instagramPasswordTextBox.Text
+            };
+
+            // Schedule the upload
+            var scheduler = new Scheduler();
+            scheduler.ScheduleJobAsync(uploadInfo).Wait();
+
+            statusLabel.Text = "Upload scheduled successfully!";
         }
     }
 }

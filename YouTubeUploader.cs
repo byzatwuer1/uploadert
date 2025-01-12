@@ -2,7 +2,7 @@ using Google.Apis.Auth.OAuth2;
 using Google.Apis.Services;
 using Google.Apis.YouTube.v3;
 using Google.Apis.YouTube.v3.Data;
-using Google.Apis.Util.Store;  // FileDataStore için gerekli
+using Google.Apis.Util.Store;
 using System;
 using System.IO;
 using System.Threading;
@@ -13,14 +13,15 @@ public class YouTubeUploader
     private readonly string[] Scopes = { YouTubeService.Scope.YoutubeUpload };
     private readonly string ApplicationName = "VideoUploaderScheduler";
     private readonly string clientSecretPath = "client_secret.json";
+    private YouTubeService youtubeService;
 
-    public async Task UploadVideoAsync(string filePath, string title, string description, string[] tags)
+    public async Task AuthenticateAsync()
     {
         UserCredential credential;
         using (var stream = new FileStream(clientSecretPath, FileMode.Open, FileAccess.Read))
         {
             credential = await GoogleWebAuthorizationBroker.AuthorizeAsync(
-                GoogleClientSecrets.FromStream(stream).Secrets,  // Load yerine FromStream kullanıyoruz
+                GoogleClientSecrets.FromStream(stream).Secrets,
                 Scopes,
                 "user",
                 CancellationToken.None,
@@ -28,12 +29,15 @@ public class YouTubeUploader
             );
         }
 
-        var youtubeService = new YouTubeService(new BaseClientService.Initializer()
+        youtubeService = new YouTubeService(new BaseClientService.Initializer()
         {
             HttpClientInitializer = credential,
             ApplicationName = ApplicationName,
         });
+    }
 
+    public async Task UploadVideoAsync(string filePath, string title, string description, string[] tags)
+    {
         var video = new Video();
         video.Snippet = new VideoSnippet();
         video.Snippet.Title = title;
