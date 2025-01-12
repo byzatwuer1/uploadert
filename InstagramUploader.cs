@@ -1,6 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using System.IO;
+using System.Linq;
 using Microsoft.Extensions.Logging;
 using InstagramApiSharp;
 using InstagramApiSharp.API;
@@ -210,7 +211,13 @@ namespace VideoUploaderScheduler
                 throw;
             }
         }
-
+public class InstagramUploadOptions
+{
+    public bool IsReel { get; set; } = false;
+    public string[] Hashtags { get; set; } = Array.Empty<string>();
+    public string[] MentionUsers { get; set; } = Array.Empty<string>();
+    public string Location { get; set; } = string.Empty;
+}
         private async Task<IResult<IMedia>> UploadImageAsync(
             string filePath, 
             string caption, 

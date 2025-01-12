@@ -1,10 +1,11 @@
+using InstagramApiSharp.API;
+using InstagramApiSharp.API.Builder;
+using InstagramApiSharp.Classes;
+using InstagramApiSharp.Classes.Models; // IMedia için gerekli
+using InstagramApiSharp.Logger;
 using System;
-using System.Collections.Generic;  // List<> için gerekli
-using System.Threading.Tasks;
 using System.IO;
-using Quartz;
-using Quartz.Impl;
-
+using System.Threading.Tasks;
 namespace VideoUploaderScheduler
 {
     public class UploadScheduler

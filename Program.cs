@@ -1,52 +1,52 @@
+using System;
+using System.IO;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using System.Net.Http;
+using System.Collections.Generic;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
-using System;
-using System.Threading.Tasks;
-using System.Windows.Forms;
-using System.IO;
 using Serilog;
+using Serilog.Events;
 
 namespace VideoUploaderScheduler
 {
-    static class Program
+    public static class Program
     {
-        public static IConfiguration Configuration { get; private set; }
+        private static IConfiguration Configuration { get; set; }
+        private static readonly string AppSettingsFile = "appsettings.json";
+        private static readonly string LogPath = Path.Combine("Logs", "log-.txt");
 
         [STAThread]
-        static async Task Main(string[] args)
+        static async Task Main()
         {
-            Application.SetHighDpiMode(HighDpiMode.SystemAware);
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-
             try
             {
-                // Uygulama başlangıç kontrolleri
-                InitializeApplication();
+                // Windows Forms ayarları
+                Application.SetHighDpiMode(HighDpiMode.SystemAware);
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
 
-                // Host oluştur ve çalıştır
-                using IHost host = CreateHostBuilder(args).Build();
+                // Başlangıç kontrolleri
+                await InitializeApplicationAsync();
+
+                // Host oluşturma ve çalıştırma
+                using var host = CreateHostBuilder().Build();
                 await host.StartAsync();
 
-                // Windows Form uygulamasını çalıştır
+                // Ana formu başlatma
                 var services = host.Services;
-                Application.Run(services.GetRequiredService<Form1>());
+                var mainForm = services.GetRequiredService<Form1>();
+                Application.Run(mainForm);
 
                 // Graceful shutdown
                 await host.StopAsync();
             }
             catch (Exception ex)
             {
-                MessageBox.Show(
-                    $"Kritik hata oluştu:\n\n{ex.Message}\n\nUygulama kapatılacak.",
-                    "Kritik Hata",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
-
-                // Log the error
-                Log.Fatal(ex, "Uygulama kritik hata nedeniyle sonlandırıldı");
+                HandleStartupError(ex);
             }
             finally
             {
@@ -54,82 +54,109 @@ namespace VideoUploaderScheduler
             }
         }
 
-        private static void InitializeApplication()
+        private static async Task InitializeApplicationAsync()
         {
-            // Configuration builder
-            Configuration = new ConfigurationBuilder()
+            try
+            {
+                // Dizinleri oluştur
+                CreateRequiredDirectories();
+
+                // Konfigürasyon dosyasını kontrol et ve oluştur
+                await EnsureConfigurationFileExistsAsync();
+
+                // Konfigürasyonu yükle
+                Configuration = CreateConfiguration();
+
+                // Logger'ı yapılandır
+                ConfigureLogging();
+
+                // Güncellemeleri kontrol et
+                await CheckForUpdatesAsync();
+
+                // Sistem gereksinimlerini kontrol et
+                CheckSystemRequirements();
+            }
+            catch (Exception ex)
+            {
+                throw new ApplicationException("Uygulama başlatma hatası", ex);
+            }
+        }
+
+        private static IConfiguration CreateConfiguration()
+        {
+            return new ConfigurationBuilder()
                 .SetBasePath(Directory.GetCurrentDirectory())
-                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                .AddJsonFile(AppSettingsFile, optional: false, reloadOnChange: true)
                 .AddJsonFile($"appsettings.{Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production"}.json", optional: true)
                 .AddEnvironmentVariables()
                 .Build();
-
-            // Initialize Serilog
-            Log.Logger = new LoggerConfiguration()
-                .ReadFrom.Configuration(Configuration)
-                .Enrich.FromLogContext()
-                .WriteTo.File(
-                    path: Path.Combine("Logs", "log-.txt"),
-                    rollingInterval: RollingInterval.Day,
-                    retainedFileCountLimit: 31)
-                .WriteTo.Console()
-                .CreateLogger();
-
-            // Ensure required directories exist
-            EnsureDirectoriesExist();
-
-            // Validate environment
-            ValidateEnvironment();
-
-            // Check for updates
-            _ = CheckForUpdatesAsync();
         }
 
-        private static IHostBuilder CreateHostBuilder(string[] args) =>
-            Host.CreateDefaultBuilder(args)
-                .ConfigureServices((hostContext, services) =>
+        private static void ConfigureLogging()
+        {
+            Log.Logger = new LoggerConfiguration()
+                .MinimumLevel.Debug()
+                .MinimumLevel.Override("Microsoft", LogEventLevel.Information)
+                .Enrich.FromLogContext()
+                .WriteTo.File(
+                    LogPath,
+                    rollingInterval: RollingInterval.Day,
+                    retainedFileCountLimit: 31,
+                    outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
+                .WriteTo.Console(
+                    outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
+                .CreateLogger();
+        }
+
+        private static IHostBuilder CreateHostBuilder() =>
+            Host.CreateDefaultBuilder()
+                .UseSerilog()
+                .ConfigureServices((context, services) =>
                 {
-                    services.AddSingleton(Configuration);
-                    
                     // Core services
-                    services.AddSingleton<UploadScheduler>();
-                    services.AddSingleton<CredentialStore>();
-                    services.AddSingleton<YouTubeUploader>();
-                    services.AddSingleton<InstagramUploader>();
+                    services.AddSingleton(Configuration);
+                    services.AddLogging(logging =>
+                    {
+                        logging.ClearProviders();
+                        logging.AddSerilog(dispose: true);
+                    });
 
-                    // Worker service
-                    services.AddHostedService<Worker>();
-
-                    // Windows Forms
+                    // Forms
                     services.AddSingleton<Form1>();
 
-                    // Add additional services
+                    // Business services
+                    services.AddSingleton<UploadScheduler>();
+                    services.AddSingleton<YouTubeUploader>();
+                    services.AddSingleton<InstagramUploader>();
+                    services.AddSingleton<CredentialStore>();
+
+                    // Background services
+                    services.AddHostedService<Worker>();
+
+                    // HTTP client
+                    services.AddHttpClient();
+
+                    // Additional configurations
                     ConfigureAdditionalServices(services);
-                })
-                .UseSerilog()
-                .ConfigureLogging((hostContext, logging) =>
-                {
-                    logging.ClearProviders();
-                    logging.AddSerilog(dispose: true);
                 });
 
         private static void ConfigureAdditionalServices(IServiceCollection services)
         {
-            // Add any additional service configurations here
             services.Configure<UploadSettings>(Configuration.GetSection("UploadSettings"));
-            services.AddHttpClient();
+            services.Configure<SecuritySettings>(Configuration.GetSection("SecuritySettings"));
         }
 
-        private static void EnsureDirectoriesExist()
+        private static void CreateRequiredDirectories()
         {
             var directories = new[]
             {
-                AppSettings.Paths.LogDirectory,
-                AppSettings.Paths.CredentialsDirectory,
-                AppSettings.Paths.TempDirectory,
-                AppSettings.Paths.YouTubeSessionsDirectory,
-                AppSettings.Paths.InstagramSessionsDirectory,
-                "Config"
+                "Logs",
+                "Config",
+                "Cache",
+                "Temp",
+                Path.Combine("Sessions", "YouTube"),
+                Path.Combine("Sessions", "Instagram"),
+                Path.Combine("Config", "Credentials")
             };
 
             foreach (var dir in directories)
@@ -141,68 +168,39 @@ namespace VideoUploaderScheduler
             }
         }
 
-        private static void ValidateEnvironment()
+        private static async Task EnsureConfigurationFileExistsAsync()
         {
-            // Check .NET version
-            if (Environment.Version < new Version(6, 0))
+            if (!File.Exists(AppSettingsFile))
             {
-                throw new Exception("Bu uygulama için .NET 6.0 veya üzeri gereklidir.");
-            }
-
-            // Check client_secret.json
-            if (!File.Exists("client_secret.json"))
-            {
-                throw new FileNotFoundException(
-                    "client_secret.json dosyası bulunamadı. " +
-                    "Lütfen Google Cloud Console'dan indirdiğiniz dosyayı uygulama klasörüne kopyalayın.");
-            }
-
-            // Check appsettings.json
-            if (!File.Exists("appsettings.json"))
-            {
-                CreateDefaultAppSettings();
-            }
-
-            // Check disk space
-            CheckDiskSpace();
-        }
-
-        private static void CreateDefaultAppSettings()
-        {
-            var defaultSettings = new
-            {
-                Logging = new
+                var defaultConfig = new
                 {
-                    LogLevel = new
+                    Logging = new
                     {
-                        Default = "Information",
-                        Microsoft = "Warning"
+                        LogLevel = new
+                        {
+                            Default = "Information",
+                            Microsoft = "Warning"
+                        }
+                    },
+                    UploadSettings = new
+                    {
+                        MaxConcurrentUploads = 3,
+                        DefaultPrivacyStatus = "private",
+                        AutoRetryCount = 3,
+                        TempDirectory = "Temp",
+                        MaxFileSize = 2147483648 // 2GB
+                    },
+                    SecuritySettings = new
+                    {
+                        EncryptCredentials = true,
+                        AutoLogoutMinutes = 30,
+                        AllowedFileTypes = new[] { ".mp4", ".jpg", ".jpeg", ".png" }
                     }
-                },
-                UploadSettings = new
-                {
-                    MaxConcurrentUploads = 3,
-                    DefaultPrivacyStatus = "private",
-                    AutoRetryCount = 3,
-                    TempDirectory = "Temp",
-                    MaxFileSize = 2147483648 // 2GB
-                },
-                AllowedFileTypes = new[] { ".mp4", ".avi", ".mov", ".wmv", ".jpg", ".jpeg", ".png" }
-            };
+                };
 
-            var json = System.Text.Json.JsonSerializer.Serialize(defaultSettings, 
-                new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText("appsettings.json", json);
-        }
-
-        private static void CheckDiskSpace()
-        {
-            var drive = new DriveInfo(Path.GetPathRoot(AppContext.BaseDirectory));
-            var minimumSpace = 1024L * 1024L * 1024L; // 1 GB
-
-            if (drive.AvailableFreeSpace < minimumSpace)
-            {
-                throw new Exception("Yetersiz disk alanı. En az 1 GB boş alan gereklidir.");
+                var json = System.Text.Json.JsonSerializer.Serialize(defaultConfig, 
+                    new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+                await File.WriteAllTextAsync(AppSettingsFile, json);
             }
         }
 
@@ -210,41 +208,86 @@ namespace VideoUploaderScheduler
         {
             try
             {
-                using var client = new System.Net.Http.HttpClient();
-                client.DefaultRequestHeaders.Add("User-Agent", "VideoUploaderScheduler");
-                
-                var response = await client.GetAsync(
-                    "https://api.github.com/repos/byzatwuer1/uploadert/releases/latest");
+                using var client = new HttpClient();
+                client.DefaultRequestHeaders.UserAgent.ParseAdd("VideoUploaderScheduler");
+                var response = await client.GetAsync("https://api.github.com/repos/byzatwuer1/uploadert/releases/latest");
                 
                 if (response.IsSuccessStatusCode)
                 {
                     var content = await response.Content.ReadAsStringAsync();
-                    var release = System.Text.Json.JsonSerializer.Deserialize<GitHubRelease>(content);
-
-                    var currentVersion = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-                    var latestVersion = new Version(release.TagName.TrimStart('v'));
-
-                    if (latestVersion > currentVersion)
+                    if (content.Contains("tag_name"))
                     {
-                        Log.Information("Yeni sürüm mevcut: {Version}", release.TagName);
-                        // TODO: Implement update notification
+                        ShowUpdateNotification();
                     }
                 }
             }
             catch (Exception ex)
             {
-                Log.Warning(ex, "Güncelleme kontrolü başarısız");
+                Log.Warning(ex, "Güncelleme kontrolü başarısız oldu");
             }
         }
-    }
 
-    public class GitHubRelease
-    {
-        public string TagName { get; set; }
-        public string Name { get; set; }
-        public string Body { get; set; }
-        public bool Draft { get; set; }
-        public bool Prerelease { get; set; }
+        private static void CheckSystemRequirements()
+        {
+            // .NET sürüm kontrolü
+            if (Environment.Version.Major < 6)
+            {
+                throw new ApplicationException(".NET 6.0 veya üzeri gereklidir.");
+            }
+
+            // Disk alanı kontrolü
+            var drive = new DriveInfo(Path.GetPathRoot(Environment.CurrentDirectory));
+            var minSpace = 1024L * 1024L * 1024L; // 1GB
+            if (drive.AvailableFreeSpace < minSpace)
+            {
+                throw new ApplicationException("Yetersiz disk alanı. En az 1GB boş alan gereklidir.");
+            }
+
+            // Gerekli dosya izinlerini kontrol et
+            CheckDirectoryPermissions();
+        }
+
+        private static void CheckDirectoryPermissions()
+        {
+            var testDirectories = new[] { "Logs", "Config", "Temp" };
+            foreach (var dir in testDirectories)
+            {
+                try
+                {
+                    var testFile = Path.Combine(dir, $"test_{Guid.NewGuid()}.tmp");
+                    File.WriteAllText(testFile, "test");
+                    File.Delete(testFile);
+                }
+                catch (Exception ex)
+                {
+                    throw new ApplicationException($"'{dir}' dizininde yazma izni yok.", ex);
+                }
+            }
+        }
+
+        private static void HandleStartupError(Exception ex)
+        {
+            var message = "Uygulama başlatılırken kritik bir hata oluştu:\n\n" +
+                         $"{ex.Message}\n\n" +
+                         "Detaylı hata bilgisi log dosyasına kaydedildi.";
+
+            Log.Fatal(ex, "Uygulama başlatma hatası");
+
+            MessageBox.Show(
+                message,
+                "Kritik Hata",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+
+        private static void ShowUpdateNotification()
+        {
+            MessageBox.Show(
+                "Yeni bir sürüm mevcut!\nLütfen GitHub sayfasından son sürümü indirin.",
+                "Güncelleme Mevcut",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
     }
 
     public class UploadSettings
@@ -254,5 +297,12 @@ namespace VideoUploaderScheduler
         public int AutoRetryCount { get; set; }
         public string TempDirectory { get; set; }
         public long MaxFileSize { get; set; }
+    }
+
+    public class SecuritySettings
+    {
+        public bool EncryptCredentials { get; set; }
+        public int AutoLogoutMinutes { get; set; }
+        public string[] AllowedFileTypes { get; set; }
     }
 }

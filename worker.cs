@@ -13,11 +13,22 @@ namespace VideoUploaderScheduler
         private readonly UploadScheduler _uploadScheduler;
         private readonly ConcurrentDictionary<string, UploadInfo> _activeUploads;
         private readonly TimeSpan _checkInterval = TimeSpan.FromMinutes(1);
+        private readonly YouTubeUploader _youtubeUploader;
+        private readonly InstagramUploader _instagramUploader;
+        private readonly CredentialStore _credentialStore;
 
-        public Worker(ILogger<Worker> logger)
+        public Worker(
+            ILogger<Worker> logger,
+            UploadScheduler uploadScheduler,
+            YouTubeUploader youtubeUploader,
+            InstagramUploader instagramUploader,
+            CredentialStore credentialStore)
         {
-            _logger = logger;
-            _uploadScheduler = new UploadScheduler();
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _uploadScheduler = uploadScheduler ?? throw new ArgumentNullException(nameof(uploadScheduler));
+            _youtubeUploader = youtubeUploader ?? throw new ArgumentNullException(nameof(youtubeUploader));
+            _instagramUploader = instagramUploader ?? throw new ArgumentNullException(nameof(instagramUploader));
+            _credentialStore = credentialStore ?? throw new ArgumentNullException(nameof(credentialStore));
             _activeUploads = new ConcurrentDictionary<string, UploadInfo>();
         }
 
@@ -57,7 +68,7 @@ namespace VideoUploaderScheduler
                     if (stoppingToken.IsCancellationRequested)
                         break;
 
-                    if (upload.ScheduledTime <= DateTime.Now && 
+                    if (upload.ScheduledTime <= DateTime.UtcNow && 
                         !_activeUploads.ContainsKey(upload.JobId))
                     {
                         await ProcessUpload(upload);
@@ -91,7 +102,7 @@ namespace VideoUploaderScheduler
                     upload.Platform, 
                     upload.FilePath);
 
-                switch (upload.Platform.ToLower())
+                switch (upload.Platform?.ToLower())
                 {
                     case "youtube":
                         await ProcessYouTubeUpload(upload);
@@ -122,14 +133,12 @@ namespace VideoUploaderScheduler
 
         private async Task ProcessYouTubeUpload(ScheduledUploadInfo upload)
         {
-            var youtubeUploader = YouTubeUploader.Instance;
-
-            if (!youtubeUploader.IsAuthenticated)
+            if (!_youtubeUploader.IsAuthenticated)
             {
-                await youtubeUploader.AuthenticateAsync();
+                await _youtubeUploader.AuthenticateAsync();
             }
 
-            youtubeUploader.UploadProgressChanged += (s, e) =>
+            _youtubeUploader.UploadProgressChanged += (s, e) =>
             {
                 var progress = (int)((double)e.BytesSent / e.TotalBytes * 100);
                 _logger.LogInformation(
@@ -138,7 +147,7 @@ namespace VideoUploaderScheduler
                     progress);
             };
 
-            var videoId = await youtubeUploader.UploadVideoAsync(
+            var videoId = await _youtubeUploader.UploadVideoAsync(
                 upload.FilePath,
                 upload.Title,
                 upload.Description,
@@ -152,17 +161,15 @@ namespace VideoUploaderScheduler
 
         private async Task ProcessInstagramUpload(ScheduledUploadInfo upload)
         {
-            var instagramUploader = InstagramUploader.Instance;
-
-            if (!instagramUploader.IsAuthenticated)
+            if (!_instagramUploader.IsAuthenticated)
             {
-                var credentials = await CredentialStore.LoadCredentials();
-                await instagramUploader.AuthenticateAsync(
+                var credentials = await _credentialStore.LoadCredentials();
+                await _instagramUploader.AuthenticateAsync(
                     credentials.InstagramUsername,
                     credentials.InstagramPassword);
             }
 
-            instagramUploader.UploadProgressChanged += (s, e) =>
+            _instagramUploader.UploadProgressChanged += (s, e) =>
             {
                 var progress = (int)((double)e.BytesSent / e.TotalBytes * 100);
                 _logger.LogInformation(
@@ -171,7 +178,7 @@ namespace VideoUploaderScheduler
                     progress);
             };
 
-            await instagramUploader.UploadMediaAsync(
+            await _instagramUploader.UploadMediaAsync(
                 upload.FilePath,
                 upload.Description);
 
