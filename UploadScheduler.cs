@@ -1,11 +1,10 @@
-using InstagramApiSharp.API;
-using InstagramApiSharp.API.Builder;
-using InstagramApiSharp.Classes;
-using InstagramApiSharp.Classes.Models; // IMedia için gerekli
-using InstagramApiSharp.Logger;
 using System;
-using System.IO;
+using System.Collections.Generic;
 using System.Threading.Tasks;
+using System.IO;
+using Quartz;
+using Quartz.Impl;
+
 namespace VideoUploaderScheduler
 {
     public class UploadScheduler
@@ -84,7 +83,7 @@ namespace VideoUploaderScheduler
         public async Task<ScheduledUploadInfo[]> GetScheduledUploads()
         {
             var jobs = await _scheduler.GetCurrentlyExecutingJobs();
-            var scheduledUploads = new System.Collections.Generic.List<ScheduledUploadInfo>();
+            var scheduledUploads = new List<ScheduledUploadInfo>();
 
             foreach (var jobContext in jobs)
             {
@@ -137,12 +136,10 @@ namespace VideoUploaderScheduler
                         throw new ArgumentException($"Desteklenmeyen platform: {platform}");
                 }
 
-                // Başarılı yükleme log'u
                 await LogUploadResult(context.JobDetail.Key.Name, true, null);
             }
             catch (Exception ex)
             {
-                // Hata log'u
                 await LogUploadResult(context.JobDetail.Key.Name, false, ex.Message);
                 throw new JobExecutionException(ex);
             }
@@ -179,45 +176,5 @@ namespace VideoUploaderScheduler
         public DateTime Timestamp { get; set; }
         public bool Success { get; set; }
         public string ErrorMessage { get; set; }
-    }
-
-    public static class LogManager
-    {
-        private static readonly string LogFile = "upload_logs.json";
-
-        public static async Task SaveLogAsync(UploadLog log)
-        {
-            try
-            {
-                var logs = await LoadLogsAsync();
-                logs.Add(log);
-                
-                var json = System.Text.Json.JsonSerializer.Serialize(logs, 
-                    new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
-                
-                await File.WriteAllTextAsync(LogFile, json);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Log kaydetme hatası: {ex.Message}");
-            }
-        }
-
-        public static async Task<List<UploadLog>> LoadLogsAsync()
-        {
-            if (!File.Exists(LogFile))
-                return new List<UploadLog>();
-
-            try
-            {
-                var json = await File.ReadAllTextAsync(LogFile);
-                return System.Text.Json.JsonSerializer.Deserialize<List<UploadLog>>(json) 
-                    ?? new List<UploadLog>();
-            }
-            catch
-            {
-                return new List<UploadLog>();
-            }
-        }
     }
 }

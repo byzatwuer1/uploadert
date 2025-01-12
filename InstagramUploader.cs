@@ -1,14 +1,15 @@
-using System;
-using System.Threading.Tasks;
-using System.IO;
-using System.Linq;
-using Microsoft.Extensions.Logging;
-using InstagramApiSharp;
 using InstagramApiSharp.API;
 using InstagramApiSharp.API.Builder;
 using InstagramApiSharp.Classes;
 using InstagramApiSharp.Classes.Models;
+using InstagramApiSharp.Classes.Models.Media;  // IMedia interface'i için
+using InstagramApiSharp.Classes.Models.Media.InstaMedia;  // Ek medya tipleri için
 using InstagramApiSharp.Logger;
+using Microsoft.Extensions.Logging;
+using System;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace VideoUploaderScheduler
 {
@@ -180,7 +181,7 @@ namespace VideoUploaderScheduler
             }
         }
 
-        private async Task<IResult<IMedia>> UploadVideoAsync(
+        private async Task<IResult<InstaMedia>> UploadVideoAsync(
             string filePath, 
             string caption, 
             InstagramUploadOptions options)
@@ -218,7 +219,7 @@ public class InstagramUploadOptions
     public string[] MentionUsers { get; set; } = Array.Empty<string>();
     public string Location { get; set; } = string.Empty;
 }
-        private async Task<IResult<IMedia>> UploadImageAsync(
+        private async Task<IResult<InstaMedia>> UploadImageAsync(
             string filePath, 
             string caption, 
             InstagramUploadOptions options)
