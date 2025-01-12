@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+
 namespace VideoUploaderScheduler
 {
     public class UploadProgressEventArgs : EventArgs
@@ -82,8 +83,8 @@ namespace VideoUploaderScheduler
             long totalBytes = 0,
             Dictionary<string, string> additionalData = null)
         {
-            MediaId = mediaId;
-            MediaUrl = mediaUrl;
+            MediaId = mediaId ?? throw new ArgumentNullException(nameof(mediaId));
+            MediaUrl = mediaUrl ?? throw new ArgumentNullException(nameof(mediaUrl));
             JobId = jobId;
             Platform = platform;
             Timestamp = DateTime.UtcNow;
@@ -111,7 +112,7 @@ namespace VideoUploaderScheduler
         {
             JobId = jobId;
             Platform = platform;
-            FilePath = filePath;
+            FilePath = filePath ?? throw new ArgumentNullException(nameof(filePath));
             FileSize = fileSize;
             Timestamp = DateTime.UtcNow;
             UploadParameters = uploadParameters ?? new Dictionary<string, string>();
@@ -137,7 +138,7 @@ namespace VideoUploaderScheduler
             JobId = jobId;
             Platform = platform;
             Timestamp = DateTime.UtcNow;
-            Reason = reason;
+            Reason = reason ?? string.Empty;  // Burada null kontrolü ekledik
             CanResume = canResume;
             BytesUploaded = bytesUploaded;
         }
@@ -162,7 +163,7 @@ namespace VideoUploaderScheduler
             JobId = jobId;
             Platform = platform;
             Timestamp = DateTime.UtcNow;
-            Reason = reason;
+            Reason = reason ?? string.Empty;  // Burada null kontrolü ekledik
             BytesUploaded = bytesUploaded;
             ResumeAfter = resumeAfter;
         }

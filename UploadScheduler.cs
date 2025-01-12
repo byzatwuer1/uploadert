@@ -159,6 +159,8 @@ namespace VideoUploaderScheduler
         }
     }
 
+    // ScheduledUploadInfo sınıfını buradan kaldırmamız gerekiyor, çünkü aynı ad alanında zaten tanımlı
+    /*
     public class ScheduledUploadInfo
     {
         public string JobId { get; set; }
@@ -169,6 +171,7 @@ namespace VideoUploaderScheduler
         public string[] Tags { get; set; }
         public DateTime ScheduledTime { get; set; }
     }
+    */
 
     public class UploadLog
     {

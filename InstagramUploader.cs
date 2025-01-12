@@ -2,8 +2,6 @@ using InstagramApiSharp.API;
 using InstagramApiSharp.API.Builder;
 using InstagramApiSharp.Classes;
 using InstagramApiSharp.Classes.Models;
-using InstagramApiSharp.Classes.Models.Media;  // IMedia interface'i için
-using InstagramApiSharp.Classes.Models.Media.InstaMedia;  // Ek medya tipleri için
 using InstagramApiSharp.Logger;
 using Microsoft.Extensions.Logging;
 using System;
@@ -143,7 +141,7 @@ namespace VideoUploaderScheduler
                     filePath,
                     fileInfo.Length));
 
-                IResult<IMedia> result;
+                IResult<InstaMedia> result;
                 
                 switch (mediaType)
                 {
@@ -212,13 +210,7 @@ namespace VideoUploaderScheduler
                 throw;
             }
         }
-public class InstagramUploadOptions
-{
-    public bool IsReel { get; set; } = false;
-    public string[] Hashtags { get; set; } = Array.Empty<string>();
-    public string[] MentionUsers { get; set; } = Array.Empty<string>();
-    public string Location { get; set; } = string.Empty;
-}
+
         private async Task<IResult<InstaMedia>> UploadImageAsync(
             string filePath, 
             string caption, 
@@ -297,4 +289,12 @@ public class InstagramUploadOptions
             Video
         }
     }
+}
+
+public class InstagramUploadOptions
+{
+    public bool IsReel { get; set; } = false;
+    public string[] Hashtags { get; set; } = Array.Empty<string>();
+    public string[] MentionUsers { get; set; } = Array.Empty<string>();
+    public string Location { get; set; } = string.Empty;
 }
