@@ -2,23 +2,22 @@
 {
     partial class Form1 : System.Windows.Forms.Form
     {
-        /// <summary>
-        /// Required designer variable.
-        /// </summary>
         private System.ComponentModel.IContainer components = null;
         private System.Windows.Forms.TextBox youtubeUsernameTextBox;
         private System.Windows.Forms.TextBox youtubePasswordTextBox;
         private System.Windows.Forms.TextBox instagramUsernameTextBox;
         private System.Windows.Forms.TextBox instagramPasswordTextBox;
         private System.Windows.Forms.TextBox filePathTextBox;
+        private System.Windows.Forms.TextBox titleTextBox;
+        private System.Windows.Forms.TextBox descriptionTextBox;
         private System.Windows.Forms.DateTimePicker dateTimePicker;
+        private System.Windows.Forms.DateTimePicker timePicker;
         private System.Windows.Forms.ComboBox platformComboBox;
         private System.Windows.Forms.Button scheduleButton;
+        private System.Windows.Forms.Button browseButton;
+        private System.Windows.Forms.Label scheduleLabel;
+        private System.Windows.Forms.Label statusLabel;
 
-        /// <summary>
-        /// Clean up any resources being used.
-        /// </summary>
-        /// <param name="disposing">true if managed resources should be disposed; otherwise, false.</param>
         protected override void Dispose(bool disposing)
         {
             if (disposing && (components != null))
@@ -28,112 +27,129 @@
             base.Dispose(disposing);
         }
 
-        #region Windows Form Designer generated code
-
-        /// <summary>
-        /// Required method for Designer support - do not modify
-        /// the contents of this method with the code editor.
-        /// </summary>
         private void InitializeComponent()
         {
-            youtubeUsernameTextBox = new System.Windows.Forms.TextBox();
-            youtubePasswordTextBox = new System.Windows.Forms.TextBox();
-            instagramUsernameTextBox = new System.Windows.Forms.TextBox();
-            instagramPasswordTextBox = new System.Windows.Forms.TextBox();
-            filePathTextBox = new System.Windows.Forms.TextBox();
-            dateTimePicker = new System.Windows.Forms.DateTimePicker();
-            platformComboBox = new System.Windows.Forms.ComboBox();
-            scheduleButton = new System.Windows.Forms.Button();
+            youtubeUsernameTextBox = new TextBox();
+            youtubePasswordTextBox = new TextBox();
+            instagramUsernameTextBox = new TextBox();
+            instagramPasswordTextBox = new TextBox();
+            filePathTextBox = new TextBox();
+            titleTextBox = new TextBox();
+            descriptionTextBox = new TextBox();
+            dateTimePicker = new DateTimePicker();
+            timePicker = new DateTimePicker();
+            platformComboBox = new ComboBox();
+            scheduleButton = new Button();
+            browseButton = new Button();
+            scheduleLabel = new Label();
+            statusLabel = new Label();
+
             SuspendLayout();
-            // 
-            // youtubeUsernameTextBox
-            // 
-            youtubeUsernameTextBox.Location = new System.Drawing.Point(12, 12);
-            youtubeUsernameTextBox.Name = "youtubeUsernameTextBox";
-            youtubeUsernameTextBox.Size = new System.Drawing.Size(200, 20);
-            youtubeUsernameTextBox.TabIndex = 0;
+
+            // YouTube Username
+            youtubeUsernameTextBox.Location = new Point(12, 12);
+            youtubeUsernameTextBox.Size = new Size(200, 20);
             youtubeUsernameTextBox.PlaceholderText = "YouTube Username";
-            // 
-            // youtubePasswordTextBox
-            // 
-            youtubePasswordTextBox.Location = new System.Drawing.Point(12, 38);
-            youtubePasswordTextBox.Name = "youtubePasswordTextBox";
-            youtubePasswordTextBox.Size = new System.Drawing.Size(200, 20);
-            youtubePasswordTextBox.TabIndex = 1;
+
+            // YouTube Password
+            youtubePasswordTextBox.Location = new Point(12, 38);
+            youtubePasswordTextBox.Size = new Size(200, 20);
             youtubePasswordTextBox.UseSystemPasswordChar = true;
             youtubePasswordTextBox.PlaceholderText = "YouTube Password";
-            // 
-            // instagramUsernameTextBox
-            // 
-            instagramUsernameTextBox.Location = new System.Drawing.Point(12, 64);
-            instagramUsernameTextBox.Name = "instagramUsernameTextBox";
-            instagramUsernameTextBox.Size = new System.Drawing.Size(200, 20);
-            instagramUsernameTextBox.TabIndex = 2;
+
+            // Instagram Username
+            instagramUsernameTextBox.Location = new Point(12, 64);
+            instagramUsernameTextBox.Size = new Size(200, 20);
             instagramUsernameTextBox.PlaceholderText = "Instagram Username";
-            // 
-            // instagramPasswordTextBox
-            // 
-            instagramPasswordTextBox.Location = new System.Drawing.Point(12, 90);
-            instagramPasswordTextBox.Name = "instagramPasswordTextBox";
-            instagramPasswordTextBox.Size = new System.Drawing.Size(200, 20);
-            instagramPasswordTextBox.TabIndex = 3;
+
+            // Instagram Password
+            instagramPasswordTextBox.Location = new Point(12, 90);
+            instagramPasswordTextBox.Size = new Size(200, 20);
             instagramPasswordTextBox.UseSystemPasswordChar = true;
             instagramPasswordTextBox.PlaceholderText = "Instagram Password";
-            // 
-            // filePathTextBox
-            // 
-            filePathTextBox.Location = new System.Drawing.Point(12, 116);
-            filePathTextBox.Name = "filePathTextBox";
-            filePathTextBox.Size = new System.Drawing.Size(200, 20);
-            filePathTextBox.TabIndex = 4;
+
+            // File Path
+            filePathTextBox.Location = new Point(12, 116);
+            filePathTextBox.Size = new Size(160, 20);
             filePathTextBox.PlaceholderText = "Video File Path";
-            // 
-            // dateTimePicker
-            // 
-            dateTimePicker.Location = new System.Drawing.Point(12, 142);
-            dateTimePicker.Name = "dateTimePicker";
-            dateTimePicker.Size = new System.Drawing.Size(200, 20);
-            dateTimePicker.TabIndex = 5;
-            // 
-            // platformComboBox
-            // 
-            platformComboBox.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
-            platformComboBox.FormattingEnabled = true;
+
+            // Browse Button
+            browseButton.Location = new Point(172, 116);
+            browseButton.Size = new Size(40, 20);
+            browseButton.Text = "...";
+            browseButton.Click += BrowseButton_Click;
+
+            // Title
+            titleTextBox.Location = new Point(12, 142);
+            titleTextBox.Size = new Size(200, 20);
+            titleTextBox.PlaceholderText = "Video Title";
+
+            // Description
+            descriptionTextBox.Location = new Point(12, 168);
+            descriptionTextBox.Size = new Size(200, 60);
+            descriptionTextBox.Multiline = true;
+            descriptionTextBox.PlaceholderText = "Video Description";
+
+            // Schedule Label
+            scheduleLabel.Location = new Point(12, 234);
+            scheduleLabel.Size = new Size(200, 20);
+            scheduleLabel.Text = "Schedule Date and Time:";
+
+            // Date Picker
+            dateTimePicker.Location = new Point(12, 254);
+            dateTimePicker.Size = new Size(200, 20);
+            dateTimePicker.Format = DateTimePickerFormat.Short;
+
+            // Time Picker
+            timePicker.Location = new Point(12, 280);
+            timePicker.Size = new Size(200, 20);
+            timePicker.Format = DateTimePickerFormat.Time;
+            timePicker.ShowUpDown = true;
+
+            // Platform ComboBox
+            platformComboBox.Location = new Point(12, 306);
+            platformComboBox.Size = new Size(200, 21);
+            platformComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
             platformComboBox.Items.AddRange(new object[] { "YouTube", "Instagram" });
-            platformComboBox.Location = new System.Drawing.Point(12, 168);
-            platformComboBox.Name = "platformComboBox";
-            platformComboBox.Size = new System.Drawing.Size(200, 21);
-            platformComboBox.TabIndex = 6;
-            // 
-            // scheduleButton
-            // 
-            scheduleButton.Location = new System.Drawing.Point(12, 195);
-            scheduleButton.Name = "scheduleButton";
-            scheduleButton.Size = new System.Drawing.Size(200, 23);
-            scheduleButton.TabIndex = 7;
+
+            // Schedule Button
+            scheduleButton.Location = new Point(12, 332);
+            scheduleButton.Size = new Size(200, 23);
             scheduleButton.Text = "Schedule Upload";
-            scheduleButton.UseVisualStyleBackColor = true;
             scheduleButton.Click += ScheduleButton_Click;
-            // 
-            // Form1
-            // 
-            AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
-            AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            ClientSize = new System.Drawing.Size(224, 230);
-            Controls.Add(scheduleButton);
-            Controls.Add(platformComboBox);
-            Controls.Add(dateTimePicker);
-            Controls.Add(filePathTextBox);
-            Controls.Add(instagramPasswordTextBox);
-            Controls.Add(instagramUsernameTextBox);
-            Controls.Add(youtubePasswordTextBox);
-            Controls.Add(youtubeUsernameTextBox);
+
+            // Status Label
+            statusLabel.Location = new Point(12, 358);
+            statusLabel.Size = new Size(200, 40);
+            statusLabel.AutoSize = true;
+
+            // Form
+            AutoScaleDimensions = new SizeF(6F, 13F);
+            AutoScaleMode = AutoScaleMode.Font;
+            ClientSize = new Size(224, 410);
+            Controls.AddRange(new Control[] {
+                youtubeUsernameTextBox,
+                youtubePasswordTextBox,
+                instagramUsernameTextBox,
+                instagramPasswordTextBox,
+                filePathTextBox,
+                browseButton,
+                titleTextBox,
+                descriptionTextBox,
+                scheduleLabel,
+                dateTimePicker,
+                timePicker,
+                platformComboBox,
+                scheduleButton,
+                statusLabel
+            });
+            
+            FormBorderStyle = FormBorderStyle.FixedSingle;
+            MaximizeBox = false;
             Name = "Form1";
-            Text = "Video Uploader";
+            Text = "Video Uploader Scheduler";
             ResumeLayout(false);
             PerformLayout();
         }
-
-        #endregion
     }
 }

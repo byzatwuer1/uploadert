@@ -1,32 +1,42 @@
-using System;
-using System.Threading.Tasks;
 using Quartz;
 using Quartz.Impl;
+using System;
+using System.Threading.Tasks;
 
 public class Scheduler
 {
-    public async Task ScheduleJobAsync(DateTime uploadTime)
+    private readonly IScheduler _scheduler;
+
+    public Scheduler()
     {
-        // Get the scheduler
         StdSchedulerFactory factory = new StdSchedulerFactory();
-        IScheduler scheduler = await factory.GetScheduler();
+        _scheduler = factory.GetScheduler().Result;
+        _scheduler.Start().Wait();
+    }
 
-        // Define the job and tie it to our VideoUploadJob class
+    public async Task ScheduleJobAsync(UploadInfo uploadInfo)
+    {
+        // Create job
         IJobDetail job = JobBuilder.Create<VideoUploadJob>()
-            .WithIdentity("videoUploadJob", "group1")
+            .WithIdentity($"upload_{DateTime.Now.Ticks}", "uploadGroup")
+            .UsingJobData("filePath", uploadInfo.FilePath)
+            .UsingJobData("title", uploadInfo.Title)
+            .UsingJobData("description", uploadInfo.Description)
+            .UsingJobData("platform", uploadInfo.Platform)
+            .UsingJobData("youtubeUsername", uploadInfo.YouTubeUsername)
+            .UsingJobData("youtubePassword", uploadInfo.YouTubePassword)
+            .UsingJobData("instagramUsername", uploadInfo.InstagramUsername)
+            .UsingJobData("instagramPassword", uploadInfo.InstagramPassword)
             .Build();
 
-        // Create a trigger that fires at the specified upload time
+        // Create trigger
         ITrigger trigger = TriggerBuilder.Create()
-            .WithIdentity("videoUploadTrigger", "group1")
-            .StartAt(uploadTime)
+            .WithIdentity($"trigger_{DateTime.Now.Ticks}", "uploadGroup")
+            .StartAt(uploadInfo.ScheduledTime)
             .Build();
 
-        // Schedule the job using the job and trigger information
-        await scheduler.ScheduleJob(job, trigger);
-
-        // Start the scheduler
-        await scheduler.Start();
+        // Schedule the job
+        await _scheduler.ScheduleJob(job, trigger);
     }
 }
 
@@ -34,7 +44,45 @@ public class VideoUploadJob : IJob
 {
     public async Task Execute(IJobExecutionContext context)
     {
-        // Job implementation
-        await Task.CompletedTask;
+        try
+        {
+            var dataMap = context.JobDetail.JobDataMap;
+            string platform = dataMap.GetString("platform");
+            string filePath = dataMap.GetString("filePath");
+            string title = dataMap.GetString("title");
+            string description = dataMap.GetString("description");
+
+            if (platform == "YouTube")
+            {
+                var uploader = new YouTubeUploader();
+                await uploader.AuthenticateAsync();
+                await uploader.UploadVideoAsync(filePath, title, description, new string[] { });
+            }
+            else if (platform == "Instagram")
+            {
+                var uploader = new InstagramUploader(
+                    dataMap.GetString("instagramUsername"),
+                    dataMap.GetString("instagramPassword")
+                );
+                await uploader.UploadVideoAsync(filePath, description);
+            }
+        }
+        catch (Exception ex)
+        {
+            throw new JobExecutionException(ex);
+        }
     }
+}
+
+public class UploadInfo
+{
+    public string FilePath { get; set; }
+    public string Title { get; set; }
+    public string Description { get; set; }
+    public string Platform { get; set; }
+    public DateTime ScheduledTime { get; set; }
+    public string YouTubeUsername { get; set; }
+    public string YouTubePassword { get; set; }
+    public string InstagramUsername { get; set; }
+    public string InstagramPassword { get; set; }
 }
