@@ -1,27 +1,16 @@
-﻿using System;
-using System.Drawing; // Make sure to include this namespace
-using System.Windows.Forms;
-
-namespace VideoUploaderScheduler
+﻿namespace VideoUploaderScheduler
 {
-    partial class Form1 : System.Windows.Forms.Form
+    partial class Form1
     {
+        /// <summary>
+        /// Required designer variable.
+        /// </summary>
         private System.ComponentModel.IContainer components = null;
-        private System.Windows.Forms.TextBox youtubeUsernameTextBox;
-        private System.Windows.Forms.TextBox youtubePasswordTextBox;
-        private System.Windows.Forms.TextBox instagramUsernameTextBox;
-        private System.Windows.Forms.TextBox instagramPasswordTextBox;
-        private System.Windows.Forms.TextBox filePathTextBox;
-        private System.Windows.Forms.TextBox titleTextBox;
-        private System.Windows.Forms.TextBox descriptionTextBox;
-        private System.Windows.Forms.DateTimePicker dateTimePicker;
-        private System.Windows.Forms.DateTimePicker timePicker;
-        private System.Windows.Forms.ComboBox platformComboBox;
-        private System.Windows.Forms.Button scheduleButton;
-        private System.Windows.Forms.Button browseButton;
-        private System.Windows.Forms.Label scheduleLabel;
-        private System.Windows.Forms.Label statusLabel;
 
+        /// <summary>
+        /// Clean up any resources being used.
+        /// </summary>
+        /// <param name="disposing">true if managed resources should be disposed; otherwise, false.</param>
         protected override void Dispose(bool disposing)
         {
             if (disposing && (components != null))
@@ -31,164 +20,185 @@ namespace VideoUploaderScheduler
             base.Dispose(disposing);
         }
 
+        #region Windows Form Designer generated code
+
+        /// <summary>
+        /// Required method for Designer support - do not modify
+        /// the contents of this method with the code editor.
+        /// </summary>
         private void InitializeComponent()
         {
-            youtubeUsernameTextBox = new TextBox();
-            youtubePasswordTextBox = new TextBox();
-            instagramUsernameTextBox = new TextBox();
-            instagramPasswordTextBox = new TextBox();
-            filePathTextBox = new TextBox();
-            titleTextBox = new TextBox();
-            descriptionTextBox = new TextBox();
-            dateTimePicker = new DateTimePicker();
-            timePicker = new DateTimePicker();
-            platformComboBox = new ComboBox();
-            scheduleButton = new Button();
-            browseButton = new Button();
-            scheduleLabel = new Label();
-            statusLabel = new Label();
+            this.tabControl1 = new System.Windows.Forms.TabControl();
+            this.tabPageAuth = new System.Windows.Forms.TabPage();
+            this.tabPageUpload = new System.Windows.Forms.TabPage();
+            
+            // Authentication Tab Components
+            this.grpYouTube = new System.Windows.Forms.GroupBox();
+            this.btnYouTubeAuth = new System.Windows.Forms.Button();
+            this.lblYouTubeStatus = new System.Windows.Forms.Label();
+            
+            this.grpInstagram = new System.Windows.Forms.GroupBox();
+            this.txtInstagramUsername = new System.Windows.Forms.TextBox();
+            this.txtInstagramPassword = new System.Windows.Forms.TextBox();
+            this.btnInstagramAuth = new System.Windows.Forms.Button();
+            this.lblInstagramStatus = new System.Windows.Forms.Label();
+            
+            // Upload Tab Components
+            this.grpUploadDetails = new System.Windows.Forms.GroupBox();
+            this.txtFilePath = new System.Windows.Forms.TextBox();
+            this.btnBrowse = new System.Windows.Forms.Button();
+            this.txtTitle = new System.Windows.Forms.TextBox();
+            this.txtDescription = new System.Windows.Forms.TextBox();
+            this.txtTags = new System.Windows.Forms.TextBox();
+            this.dateTimePickerUpload = new System.Windows.Forms.DateTimePicker();
+            this.cmbPlatform = new System.Windows.Forms.ComboBox();
+            this.btnScheduleUpload = new System.Windows.Forms.Button();
+            
+            this.lstScheduledUploads = new System.Windows.Forms.ListView();
+            
+            // Initialize TabControl
+            this.tabControl1.SuspendLayout();
+            
+            // Tab Control
+            this.tabControl1.Location = new System.Drawing.Point(12, 12);
+            this.tabControl1.Name = "tabControl1";
+            this.tabControl1.Size = new System.Drawing.Size(760, 537);
+            this.tabControl1.TabIndex = 0;
+            this.tabControl1.Controls.Add(this.tabPageAuth);
+            this.tabControl1.Controls.Add(this.tabPageUpload);
 
-            SuspendLayout();
+            // Authentication Tab
+            this.tabPageAuth.Location = new System.Drawing.Point(4, 22);
+            this.tabPageAuth.Name = "tabPageAuth";
+            this.tabPageAuth.Size = new System.Drawing.Size(752, 511);
+            this.tabPageAuth.TabIndex = 0;
+            this.tabPageAuth.Text = "Kimlik Doğrulama";
+            this.tabPageAuth.UseVisualStyleBackColor = true;
+            
+            // YouTube Group
+            this.grpYouTube.Location = new System.Drawing.Point(20, 20);
+            this.grpYouTube.Name = "grpYouTube";
+            this.grpYouTube.Size = new System.Drawing.Size(700, 100);
+            this.grpYouTube.Text = "YouTube Kimlik Doğrulama";
+            
+            this.btnYouTubeAuth.Location = new System.Drawing.Point(20, 30);
+            this.btnYouTubeAuth.Size = new System.Drawing.Size(150, 30);
+            this.btnYouTubeAuth.Text = "YouTube'a Bağlan";
+            
+            this.lblYouTubeStatus.Location = new System.Drawing.Point(180, 35);
+            this.lblYouTubeStatus.AutoSize = true;
+            
+            // Instagram Group
+            this.grpInstagram.Location = new System.Drawing.Point(20, 140);
+            this.grpInstagram.Size = new System.Drawing.Size(700, 150);
+            this.grpInstagram.Text = "Instagram Kimlik Doğrulama";
+            
+            this.txtInstagramUsername.Location = new System.Drawing.Point(20, 30);
+            this.txtInstagramUsername.Size = new System.Drawing.Size(200, 20);
+            this.txtInstagramUsername.PlaceholderText = "Instagram Kullanıcı Adı";
+            
+            this.txtInstagramPassword.Location = new System.Drawing.Point(20, 60);
+            this.txtInstagramPassword.Size = new System.Drawing.Size(200, 20);
+            this.txtInstagramPassword.PasswordChar = '*';
+            this.txtInstagramPassword.PlaceholderText = "Instagram Şifresi";
+            
+            this.btnInstagramAuth.Location = new System.Drawing.Point(20, 90);
+            this.btnInstagramAuth.Size = new System.Drawing.Size(150, 30);
+            this.btnInstagramAuth.Text = "Instagram'a Bağlan";
+            
+            this.lblInstagramStatus.Location = new System.Drawing.Point(180, 95);
+            this.lblInstagramStatus.AutoSize = true;
 
-            // YouTube Username
-            youtubeUsernameTextBox.Location = new Point(12, 12);
-            youtubeUsernameTextBox.Size = new Size(200, 20);
-            youtubeUsernameTextBox.PlaceholderText = "YouTube Username";
-
-            // YouTube Password
-            youtubePasswordTextBox.Location = new Point(12, 38);
-            youtubePasswordTextBox.Size = new Size(200, 20);
-            youtubePasswordTextBox.UseSystemPasswordChar = true;
-            youtubePasswordTextBox.PlaceholderText = "YouTube Password";
-
-            // Instagram Username
-            instagramUsernameTextBox.Location = new Point(12, 64);
-            instagramUsernameTextBox.Size = new Size(200, 20);
-            instagramUsernameTextBox.PlaceholderText = "Instagram Username";
-
-            // Instagram Password
-            instagramPasswordTextBox.Location = new Point(12, 90);
-            instagramPasswordTextBox.Size = new Size(200, 20);
-            instagramPasswordTextBox.UseSystemPasswordChar = true;
-            instagramPasswordTextBox.PlaceholderText = "Instagram Password";
-
-            // File Path
-            filePathTextBox.Location = new Point(12, 116);
-            filePathTextBox.Size = new Size(160, 20);
-            filePathTextBox.PlaceholderText = "Video File Path";
-
-            // Browse Button
-            browseButton.Location = new Point(172, 116);
-            browseButton.Size = new Size(40, 20);
-            browseButton.Text = "...";
-            browseButton.Click += new EventHandler(BrowseButton_Click);
-
-            // Title
-            titleTextBox.Location = new Point(12, 142);
-            titleTextBox.Size = new Size(200, 20);
-            titleTextBox.PlaceholderText = "Video Title";
-
-            // Description
-            descriptionTextBox.Location = new Point(12, 168);
-            descriptionTextBox.Size = new Size(200, 60);
-            descriptionTextBox.Multiline = true;
-            descriptionTextBox.PlaceholderText = "Video Description";
-
-            // Schedule Label
-            scheduleLabel.Location = new Point(12, 234);
-            scheduleLabel.Size = new Size(200, 20);
-            scheduleLabel.Text = "Schedule Date and Time:";
-
-            // Date Picker
-            dateTimePicker.Location = new Point(12, 254);
-            dateTimePicker.Size = new Size(200, 20);
-            dateTimePicker.Format = DateTimePickerFormat.Short;
-
-            // Time Picker
-            timePicker.Location = new Point(12, 280);
-            timePicker.Size = new Size(200, 20);
-            timePicker.Format = DateTimePickerFormat.Time;
-            timePicker.ShowUpDown = true;
-
-            // Platform ComboBox
-            platformComboBox.Location = new Point(12, 306);
-            platformComboBox.Size = new Size(200, 21);
-            platformComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
-            platformComboBox.Items.AddRange(new object[] { "YouTube", "Instagram" });
-
-            // Schedule Button
-            scheduleButton.Location = new Point(12, 332);
-            scheduleButton.Size = new Size(200, 23);
-            scheduleButton.Text = "Schedule Upload";
-            scheduleButton.Click += new EventHandler(ScheduleButton_Click);
-
-            // Status Label
-            statusLabel.Location = new Point(12, 358);
-            statusLabel.Size = new Size(200, 40);
-            statusLabel.AutoSize = true;
-
-            // Form
-            AutoScaleDimensions = new SizeF(6F, 13F);
-            AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(224, 410);
-            Controls.AddRange(new Control[] {
-                youtubeUsernameTextBox,
-                youtubePasswordTextBox,
-                instagramUsernameTextBox,
-                instagramPasswordTextBox,
-                filePathTextBox,
-                browseButton,
-                titleTextBox,
-                descriptionTextBox,
-                scheduleLabel,
-                dateTimePicker,
-                timePicker,
-                platformComboBox,
-                scheduleButton,
-                statusLabel
+            // Upload Tab
+            this.tabPageUpload.Location = new System.Drawing.Point(4, 22);
+            this.tabPageUpload.Name = "tabPageUpload";
+            this.tabPageUpload.Size = new System.Drawing.Size(752, 511);
+            this.tabPageUpload.TabIndex = 1;
+            this.tabPageUpload.Text = "Yükleme Planla";
+            this.tabPageUpload.UseVisualStyleBackColor = true;
+            
+            // Upload Details Group
+            this.grpUploadDetails.Location = new System.Drawing.Point(20, 20);
+            this.grpUploadDetails.Size = new System.Drawing.Size(700, 250);
+            this.grpUploadDetails.Text = "Yükleme Detayları";
+            
+            this.txtFilePath.Location = new System.Drawing.Point(20, 30);
+            this.txtFilePath.Size = new System.Drawing.Size(500, 20);
+            this.txtFilePath.PlaceholderText = "Dosya Yolu";
+            
+            this.btnBrowse.Location = new System.Drawing.Point(530, 29);
+            this.btnBrowse.Size = new System.Drawing.Size(75, 23);
+            this.btnBrowse.Text = "Gözat...";
+            
+            this.txtTitle.Location = new System.Drawing.Point(20, 60);
+            this.txtTitle.Size = new System.Drawing.Size(500, 20);
+            this.txtTitle.PlaceholderText = "Başlık";
+            
+            this.txtDescription.Location = new System.Drawing.Point(20, 90);
+            this.txtDescription.Size = new System.Drawing.Size(500, 60);
+            this.txtDescription.Multiline = true;
+            this.txtDescription.PlaceholderText = "Açıklama";
+            
+            this.txtTags.Location = new System.Drawing.Point(20, 160);
+            this.txtTags.Size = new System.Drawing.Size(500, 20);
+            this.txtTags.PlaceholderText = "Etiketler (virgülle ayırın)";
+            
+            this.dateTimePickerUpload.Location = new System.Drawing.Point(20, 190);
+            this.dateTimePickerUpload.Size = new System.Drawing.Size(200, 20);
+            
+            this.cmbPlatform.Location = new System.Drawing.Point(230, 190);
+            this.cmbPlatform.Size = new System.Drawing.Size(150, 20);
+            this.cmbPlatform.Items.AddRange(new object[] { "YouTube", "Instagram" });
+            this.cmbPlatform.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            
+            this.btnScheduleUpload.Location = new System.Drawing.Point(20, 220);
+            this.btnScheduleUpload.Size = new System.Drawing.Size(150, 30);
+            this.btnScheduleUpload.Text = "Yüklemeyi Planla";
+            
+            // Scheduled Uploads List
+            this.lstScheduledUploads.Location = new System.Drawing.Point(20, 290);
+            this.lstScheduledUploads.Size = new System.Drawing.Size(700, 200);
+            this.lstScheduledUploads.View = System.Windows.Forms.View.Details;
+            this.lstScheduledUploads.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
+                new System.Windows.Forms.ColumnHeader() { Text = "Platform", Width = 100 },
+                new System.Windows.Forms.ColumnHeader() { Text = "Dosya", Width = 200 },
+                new System.Windows.Forms.ColumnHeader() { Text = "Başlık", Width = 200 },
+                new System.Windows.Forms.ColumnHeader() { Text = "Planlanan Zaman", Width = 150 }
             });
 
-            FormBorderStyle = FormBorderStyle.FixedSingle;
-            MaximizeBox = false;
-            Name = "Form1";
-            Text = "Video Uploader Scheduler";
-            ResumeLayout(false);
-            PerformLayout();
+            // Form Properties
+            this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
+            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
+            this.ClientSize = new System.Drawing.Size(784, 561);
+            this.Controls.Add(this.tabControl1);
+            this.Name = "Form1";
+            this.Text = "Video Yükleme Planlayıcı";
+            this.tabControl1.ResumeLayout(false);
+            this.ResumeLayout(false);
         }
 
-        private void BrowseButton_Click(object sender, EventArgs e)
-        {
-            using (OpenFileDialog openFileDialog = new OpenFileDialog())
-            {
-                openFileDialog.Filter = "Video files (*.mp4;*.avi;*.mov)|*.mp4;*.avi;*.mov|All files (*.*)|*.*";
-                if (openFileDialog.ShowDialog() == DialogResult.OK)
-                {
-                    filePathTextBox.Text = openFileDialog.FileName;
-                }
-            }
-        }
+        #endregion
 
-        private void ScheduleButton_Click(object sender, EventArgs e)
-        {
-            // Collect data from form fields
-            var uploadInfo = new UploadInfo
-            {
-                FilePath = filePathTextBox.Text,
-                Title = titleTextBox.Text,
-                Description = descriptionTextBox.Text,
-                Platform = platformComboBox.SelectedItem.ToString(),
-                ScheduledTime = dateTimePicker.Value.Date + timePicker.Value.TimeOfDay,
-                YouTubeUsername = youtubeUsernameTextBox.Text,
-                YouTubePassword = youtubePasswordTextBox.Text,
-                InstagramUsername = instagramUsernameTextBox.Text,
-                InstagramPassword = instagramPasswordTextBox.Text
-            };
-
-            // Schedule the upload
-            var scheduler = new Scheduler();
-            scheduler.ScheduleJobAsync(uploadInfo).Wait();
-
-            statusLabel.Text = "Upload scheduled successfully!";
-        }
+        private System.Windows.Forms.TabControl tabControl1;
+        private System.Windows.Forms.TabPage tabPageAuth;
+        private System.Windows.Forms.TabPage tabPageUpload;
+        private System.Windows.Forms.GroupBox grpYouTube;
+        private System.Windows.Forms.Button btnYouTubeAuth;
+        private System.Windows.Forms.Label lblYouTubeStatus;
+        private System.Windows.Forms.GroupBox grpInstagram;
+        private System.Windows.Forms.TextBox txtInstagramUsername;
+        private System.Windows.Forms.TextBox txtInstagramPassword;
+        private System.Windows.Forms.Button btnInstagramAuth;
+        private System.Windows.Forms.Label lblInstagramStatus;
+        private System.Windows.Forms.GroupBox grpUploadDetails;
+        private System.Windows.Forms.TextBox txtFilePath;
+        private System.Windows.Forms.Button btnBrowse;
+        private System.Windows.Forms.TextBox txtTitle;
+        private System.Windows.Forms.TextBox txtDescription;
+        private System.Windows.Forms.TextBox txtTags;
+        private System.Windows.Forms.DateTimePicker dateTimePickerUpload;
+        private System.Windows.Forms.ComboBox cmbPlatform;
+        private System.Windows.Forms.Button btnScheduleUpload;
+        private System.Windows.Forms.ListView lstScheduledUploads;
     }
 }

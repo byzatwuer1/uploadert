@@ -1,90 +1,218 @@
-using OpenQA.Selenium;
-using OpenQA.Selenium.Chrome;
+using InstagramApiSharp.API;
+using InstagramApiSharp.API.Builder;
+using InstagramApiSharp.Classes;
+using InstagramApiSharp.Logger;
 using System;
-using System.Threading;
+using System.IO;
 using System.Threading.Tasks;
 
-public class InstagramUploader
+namespace VideoUploaderScheduler
 {
-    private readonly string _username;
-    private readonly string _password;
-
-    public InstagramUploader(string username, string password)
+    public class InstagramUploader
     {
-        _username = username;
-        _password = password;
-    }
+        private IInstaApi _instaApi;
+        private static readonly object _lockObject = new object();
+        private static InstagramUploader _instance;
+        private bool _isAuthenticated;
+        private readonly string _sessionFolder = "InstagramSessions";
 
-    public async Task UploadVideoAsync(string filePath, string caption)
-    {
-        var options = new ChromeOptions();
-        options.AddArgument("--headless");
-        options.AddArgument("--disable-gpu");
+        private InstagramUploader()
+        {
+            _isAuthenticated = false;
+            if (!Directory.Exists(_sessionFolder))
+            {
+                Directory.CreateDirectory(_sessionFolder);
+            }
+        }
 
-        using (var driver = new ChromeDriver(options))
+        public static InstagramUploader Instance
+        {
+            get
+            {
+                if (_instance == null)
+                {
+                    lock (_lockObject)
+                    {
+                        _instance ??= new InstagramUploader();
+                    }
+                }
+                return _instance;
+            }
+        }
+
+        public async Task AuthenticateAsync(string username, string password)
         {
             try
             {
-                driver.Navigate().GoToUrl("https://www.instagram.com/accounts/login/");
-
-                await Task.Delay(2000); // Wait for the page to load
-
-                // Login
-                var usernameField = driver.FindElement(By.Name("username"));
-                var passwordField = driver.FindElement(By.Name("password"));
-                var loginButton = driver.FindElement(By.XPath("//button[@type='submit']"));
-
-                usernameField.SendKeys(_username);
-                passwordField.SendKeys(_password);
-                loginButton.Click();
-
-                await Task.Delay(5000); // Wait for login to complete
-
-                // Handle "Save Your Login Info?" popup if it appears
-                try
+                var userSession = new UserSessionData
                 {
-                    var saveInfoNotNowButton = driver.FindElement(By.XPath("//button[contains(text(), 'Not Now')]"));
-                    saveInfoNotNowButton.Click();
-                }
-                catch (NoSuchElementException) { }
+                    UserName = username,
+                    Password = password
+                };
 
-                await Task.Delay(2000); // Wait for any popups to close
+                _instaApi = InstaApiBuilder.CreateBuilder()
+                    .SetUser(userSession)
+                    .UseLogger(new DebugLogger(LogLevel.Exceptions))
+                    .Build();
 
-                // Handle "Turn on Notifications" popup if it appears
-                try
+                // Önceki oturum verisi varsa yükle
+                var sessionFile = Path.Combine(_sessionFolder, $"{username}_session.bin");
+                if (File.Exists(sessionFile))
                 {
-                    var notificationsNotNowButton = driver.FindElement(By.XPath("//button[contains(text(), 'Not Now')]"));
-                    notificationsNotNowButton.Click();
+                    var sessionData = await File.ReadAllBytesAsync(sessionFile);
+                    await _instaApi.LoadStateDataFromStreamAsync(new MemoryStream(sessionData));
                 }
-                catch (NoSuchElementException) { }
 
-                await Task.Delay(2000); // Wait for any popups to close
+                if (!_instaApi.IsUserAuthenticated)
+                {
+                    // Login
+                    var loginResult = await _instaApi.LoginAsync();
+                    if (!loginResult.Succeeded)
+                    {
+                        throw new Exception($"Instagram login hatası: {loginResult.Info.Message}");
+                    }
 
-                // Go to upload page
-                driver.Navigate().GoToUrl("https://www.instagram.com/create/style/");
+                    // Oturum verilerini kaydet
+                    var state = _instaApi.GetStateDataAsStream();
+                    using (var fileStream = File.Create(sessionFile))
+                    {
+                        state.Seek(0, SeekOrigin.Begin);
+                        await state.CopyToAsync(fileStream);
+                    }
+                }
 
-                await Task.Delay(2000); // Wait for the page to load
+                _isAuthenticated = true;
 
-                // Upload video
-                var fileInput = driver.FindElement(By.XPath("//input[@type='file']"));
-                fileInput.SendKeys(filePath);
-
-                await Task.Delay(5000); // Wait for the video to upload
-
-                // Add caption
-                var captionField = driver.FindElement(By.XPath("//textarea[@aria-label='Write a caption…']"));
-                captionField.SendKeys(caption);
-
-                // Share post
-                var shareButton = driver.FindElement(By.XPath("//button[contains(text(), 'Share')]"));
-                shareButton.Click();
-
-                await Task.Delay(5000); // Wait for the video to be shared
+                // Kimlik bilgilerini kaydet
+                var credentials = await CredentialStore.LoadCredentials();
+                credentials.InstagramUsername = username;
+                credentials.InstagramSessionFile = sessionFile;
+                await CredentialStore.SaveCredentials(credentials);
             }
-            finally
+            catch (Exception ex)
             {
-                driver.Quit();
+                _isAuthenticated = false;
+                throw new Exception($"Instagram kimlik doğrulama hatası: {ex.Message}", ex);
             }
         }
+
+        public async Task UploadMediaAsync(string filePath, string caption)
+        {
+            if (!_isAuthenticated)
+            {
+                throw new InvalidOperationException("Instagram'a yükleme yapmadan önce kimlik doğrulaması yapmalısınız.");
+            }
+
+            if (!File.Exists(filePath))
+            {
+                throw new FileNotFoundException($"Yüklenecek medya dosyası bulunamadı: {filePath}");
+            }
+
+            try
+            {
+                var extension = Path.GetExtension(filePath).ToLower();
+                var isVideo = extension == ".mp4" || extension == ".mov";
+
+                if (isVideo)
+                {
+                    await UploadVideoAsync(filePath, caption);
+                }
+                else
+                {
+                    await UploadPhotoAsync(filePath, caption);
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Medya yükleme hatası: {ex.Message}", ex);
+            }
+        }
+
+        private async Task UploadPhotoAsync(string photoPath, string caption)
+        {
+            try
+            {
+                OnUploadProgressChanged(new UploadProgressEventArgs(0, 100));
+
+                var mediaUploadResult = await _instaApi.MediaProcessor.UploadPhotoAsync(photoPath, caption);
+                
+                if (!mediaUploadResult.Succeeded)
+                {
+                    throw new Exception($"Fotoğraf yükleme başarısız: {mediaUploadResult.Info.Message}");
+                }
+
+                OnUploadProgressChanged(new UploadProgressEventArgs(100, 100));
+                OnUploadCompleted(new UploadCompletedEventArgs(
+                    mediaUploadResult.Value.Pk.ToString(),
+                    $"https://instagram.com/p/{mediaUploadResult.Value.Code}"
+                ));
+            }
+            catch (Exception ex)
+            {
+                OnUploadError(new UploadErrorEventArgs(ex.Message));
+                throw;
+            }
+        }
+
+        private async Task UploadVideoAsync(string videoPath, string caption)
+        {
+            try
+            {
+                OnUploadProgressChanged(new UploadProgressEventArgs(0, 100));
+
+                var mediaUploadResult = await _instaApi.MediaProcessor.UploadVideoAsync(videoPath, caption);
+                
+                if (!mediaUploadResult.Succeeded)
+                {
+                    throw new Exception($"Video yükleme başarısız: {mediaUploadResult.Info.Message}");
+                }
+
+                OnUploadProgressChanged(new UploadProgressEventArgs(100, 100));
+                OnUploadCompleted(new UploadCompletedEventArgs(
+                    mediaUploadResult.Value.Pk.ToString(),
+                    $"https://instagram.com/p/{mediaUploadResult.Value.Code}"
+                ));
+            }
+            catch (Exception ex)
+            {
+                OnUploadError(new UploadErrorEventArgs(ex.Message));
+                throw;
+            }
+        }
+
+        public async Task CheckAuthenticationStatus()
+        {
+            if (_instaApi != null)
+            {
+                var currentUser = await _instaApi.UserProcessor.GetCurrentUserAsync();
+                _isAuthenticated = currentUser.Succeeded;
+            }
+            else
+            {
+                _isAuthenticated = false;
+            }
+        }
+
+        // Event handlers for upload progress
+        public event EventHandler<UploadProgressEventArgs> UploadProgressChanged;
+        public event EventHandler<UploadErrorEventArgs> UploadError;
+        public event EventHandler<UploadCompletedEventArgs> UploadCompleted;
+
+        protected virtual void OnUploadProgressChanged(UploadProgressEventArgs e)
+        {
+            UploadProgressChanged?.Invoke(this, e);
+        }
+
+        protected virtual void OnUploadError(UploadErrorEventArgs e)
+        {
+            UploadError?.Invoke(this, e);
+        }
+
+        protected virtual void OnUploadCompleted(UploadCompletedEventArgs e)
+        {
+            UploadCompleted?.Invoke(this, e);
+        }
+
+        public bool IsAuthenticated => _isAuthenticated;
     }
 }
