@@ -1,175 +1,258 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
 using System;
-using System.Windows.Forms;
 using System.Threading.Tasks;
+using System.Windows.Forms;
+using System.IO;
+using Serilog;
 
 namespace VideoUploaderScheduler
 {
     static class Program
     {
-        /// <summary>
-        /// The main entry point for the application.
-        /// </summary>
+        public static IConfiguration Configuration { get; private set; }
+
         [STAThread]
-        static void Main()
+        static async Task Main(string[] args)
         {
+            Application.SetHighDpiMode(HighDpiMode.SystemAware);
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+
             try
             {
-                Application.SetHighDpiMode(HighDpiMode.SystemAware);
-                Application.EnableVisualStyles();
-                Application.SetCompatibleTextRenderingDefault(false);
+                // Uygulama başlangıç kontrolleri
+                InitializeApplication();
 
-                // Uygulama başlangıç kontrollerini yap
-                PerformStartupChecks();
+                // Host oluştur ve çalıştır
+                using IHost host = CreateHostBuilder(args).Build();
+                await host.StartAsync();
 
-                // Ana formu başlat
-                Application.Run(new Form1());
+                // Windows Form uygulamasını çalıştır
+                var services = host.Services;
+                Application.Run(services.GetRequiredService<Form1>());
+
+                // Graceful shutdown
+                await host.StopAsync();
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Uygulama başlatılırken bir hata oluştu:\n\n{ex.Message}",
+                MessageBox.Show(
+                    $"Kritik hata oluştu:\n\n{ex.Message}\n\nUygulama kapatılacak.",
                     "Kritik Hata",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
+
+                // Log the error
+                Log.Fatal(ex, "Uygulama kritik hata nedeniyle sonlandırıldı");
+            }
+            finally
+            {
+                Log.CloseAndFlush();
             }
         }
 
-        private static void PerformStartupChecks()
+        private static void InitializeApplication()
         {
-            // Gerekli klasörleri oluştur
-            CreateRequiredDirectories();
+            // Configuration builder
+            Configuration = new ConfigurationBuilder()
+                .SetBasePath(Directory.GetCurrentDirectory())
+                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                .AddJsonFile($"appsettings.{Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production"}.json", optional: true)
+                .AddEnvironmentVariables()
+                .Build();
 
-            // Yapılandırma dosyalarını kontrol et
-            CheckConfigurationFiles();
+            // Initialize Serilog
+            Log.Logger = new LoggerConfiguration()
+                .ReadFrom.Configuration(Configuration)
+                .Enrich.FromLogContext()
+                .WriteTo.File(
+                    path: Path.Combine("Logs", "log-.txt"),
+                    rollingInterval: RollingInterval.Day,
+                    retainedFileCountLimit: 31)
+                .WriteTo.Console()
+                .CreateLogger();
 
-            // Güncellemeleri kontrol et
-            _ = Task.Run(CheckForUpdatesAsync);
+            // Ensure required directories exist
+            EnsureDirectoriesExist();
+
+            // Validate environment
+            ValidateEnvironment();
+
+            // Check for updates
+            _ = CheckForUpdatesAsync();
         }
 
-        private static void CreateRequiredDirectories()
+        private static IHostBuilder CreateHostBuilder(string[] args) =>
+            Host.CreateDefaultBuilder(args)
+                .ConfigureServices((hostContext, services) =>
+                {
+                    services.AddSingleton(Configuration);
+                    
+                    // Core services
+                    services.AddSingleton<UploadScheduler>();
+                    services.AddSingleton<CredentialStore>();
+                    services.AddSingleton<YouTubeUploader>();
+                    services.AddSingleton<InstagramUploader>();
+
+                    // Worker service
+                    services.AddHostedService<Worker>();
+
+                    // Windows Forms
+                    services.AddSingleton<Form1>();
+
+                    // Add additional services
+                    ConfigureAdditionalServices(services);
+                })
+                .UseSerilog()
+                .ConfigureLogging((hostContext, logging) =>
+                {
+                    logging.ClearProviders();
+                    logging.AddSerilog(dispose: true);
+                });
+
+        private static void ConfigureAdditionalServices(IServiceCollection services)
+        {
+            // Add any additional service configurations here
+            services.Configure<UploadSettings>(Configuration.GetSection("UploadSettings"));
+            services.AddHttpClient();
+        }
+
+        private static void EnsureDirectoriesExist()
         {
             var directories = new[]
             {
-                "Logs",
-                "InstagramSessions",
-                "YouTubeSessions",
-                "Temp"
+                AppSettings.Paths.LogDirectory,
+                AppSettings.Paths.CredentialsDirectory,
+                AppSettings.Paths.TempDirectory,
+                AppSettings.Paths.YouTubeSessionsDirectory,
+                AppSettings.Paths.InstagramSessionsDirectory,
+                "Config"
             };
 
             foreach (var dir in directories)
             {
-                if (!System.IO.Directory.Exists(dir))
+                if (!Directory.Exists(dir))
                 {
-                    System.IO.Directory.CreateDirectory(dir);
+                    Directory.CreateDirectory(dir);
                 }
             }
         }
 
-        private static void CheckConfigurationFiles()
+        private static void ValidateEnvironment()
         {
-            // app.config kontrolü
-            if (!System.IO.File.Exists("app.config"))
+            // Check .NET version
+            if (Environment.Version < new Version(6, 0))
             {
-                CreateDefaultAppConfig();
+                throw new Exception("Bu uygulama için .NET 6.0 veya üzeri gereklidir.");
             }
 
-            // YouTube client secret kontrolü
-            if (!System.IO.File.Exists("client_secret.json"))
+            // Check client_secret.json
+            if (!File.Exists("client_secret.json"))
             {
-                MessageBox.Show(
-                    "YouTube API client_secret.json dosyası bulunamadı.\n" +
-                    "Lütfen Google Cloud Console'dan indirdiğiniz client_secret.json dosyasını " +
-                    "uygulama klasörüne kopyalayın.",
-                    "Yapılandırma Hatası",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
+                throw new FileNotFoundException(
+                    "client_secret.json dosyası bulunamadı. " +
+                    "Lütfen Google Cloud Console'dan indirdiğiniz dosyayı uygulama klasörüne kopyalayın.");
             }
+
+            // Check appsettings.json
+            if (!File.Exists("appsettings.json"))
+            {
+                CreateDefaultAppSettings();
+            }
+
+            // Check disk space
+            CheckDiskSpace();
         }
 
-        private static void CreateDefaultAppConfig()
+        private static void CreateDefaultAppSettings()
         {
-            var config = @"<?xml version=""1.0"" encoding=""utf-8"" ?>
-<configuration>
-    <appSettings>
-        <add key=""MaxConcurrentUploads"" value=""3"" />
-        <add key=""DefaultPrivacyStatus"" value=""private"" />
-        <add key=""AutoRetryCount"" value=""3"" />
-        <add key=""LogLevel"" value=""Info"" />
-    </appSettings>
-</configuration>";
+            var defaultSettings = new
+            {
+                Logging = new
+                {
+                    LogLevel = new
+                    {
+                        Default = "Information",
+                        Microsoft = "Warning"
+                    }
+                },
+                UploadSettings = new
+                {
+                    MaxConcurrentUploads = 3,
+                    DefaultPrivacyStatus = "private",
+                    AutoRetryCount = 3,
+                    TempDirectory = "Temp",
+                    MaxFileSize = 2147483648 // 2GB
+                },
+                AllowedFileTypes = new[] { ".mp4", ".avi", ".mov", ".wmv", ".jpg", ".jpeg", ".png" }
+            };
 
-            System.IO.File.WriteAllText("app.config", config);
+            var json = System.Text.Json.JsonSerializer.Serialize(defaultSettings, 
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText("appsettings.json", json);
+        }
+
+        private static void CheckDiskSpace()
+        {
+            var drive = new DriveInfo(Path.GetPathRoot(AppContext.BaseDirectory));
+            var minimumSpace = 1024L * 1024L * 1024L; // 1 GB
+
+            if (drive.AvailableFreeSpace < minimumSpace)
+            {
+                throw new Exception("Yetersiz disk alanı. En az 1 GB boş alan gereklidir.");
+            }
         }
 
         private static async Task CheckForUpdatesAsync()
         {
             try
             {
-                var currentVersion = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-                // GitHub API'yi kullanarak son sürümü kontrol et
-                using (var client = new System.Net.Http.HttpClient())
+                using var client = new System.Net.Http.HttpClient();
+                client.DefaultRequestHeaders.Add("User-Agent", "VideoUploaderScheduler");
+                
+                var response = await client.GetAsync(
+                    "https://api.github.com/repos/byzatwuer1/uploadert/releases/latest");
+                
+                if (response.IsSuccessStatusCode)
                 {
-                    client.DefaultRequestHeaders.Add("User-Agent", "VideoUploaderScheduler");
-                    var response = await client.GetAsync("https://api.github.com/repos/byzatwuer1/uploadert/releases/latest");
-                    
-                    if (response.IsSuccessStatusCode)
+                    var content = await response.Content.ReadAsStringAsync();
+                    var release = System.Text.Json.JsonSerializer.Deserialize<GitHubRelease>(content);
+
+                    var currentVersion = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+                    var latestVersion = new Version(release.TagName.TrimStart('v'));
+
+                    if (latestVersion > currentVersion)
                     {
-                        var content = await response.Content.ReadAsStringAsync();
-                        // JSON içeriğinden sürüm bilgisini çıkar
-                        // Bu örnek için basit bir kontrol yapılıyor
-                        if (content.Contains("tag_name"))
-                        {
-                            MessageBox.Show(
-                                "Yeni bir sürüm mevcut!\n" +
-                                "Lütfen GitHub sayfasından son sürümü indirin.",
-                                "Güncelleme Mevcut",
-                                MessageBoxButtons.OK,
-                                MessageBoxIcon.Information);
-                        }
+                        Log.Information("Yeni sürüm mevcut: {Version}", release.TagName);
+                        // TODO: Implement update notification
                     }
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Güncelleme kontrolü yapılırken hata oluştu: {ex.Message}");
-                // Güncelleme kontrolü hatası kritik olmadığı için kullanıcıya gösterilmiyor
+                Log.Warning(ex, "Güncelleme kontrolü başarısız");
             }
         }
+    }
 
-        public static class AppSettings
-        {
-            public static int MaxConcurrentUploads
-            {
-                get
-                {
-                    var value = System.Configuration.ConfigurationManager.AppSettings["MaxConcurrentUploads"];
-                    return int.TryParse(value, out int result) ? result : 3;
-                }
-            }
+    public class GitHubRelease
+    {
+        public string TagName { get; set; }
+        public string Name { get; set; }
+        public string Body { get; set; }
+        public bool Draft { get; set; }
+        public bool Prerelease { get; set; }
+    }
 
-            public static string DefaultPrivacyStatus
-            {
-                get
-                {
-                    return System.Configuration.ConfigurationManager.AppSettings["DefaultPrivacyStatus"] ?? "private";
-                }
-            }
-
-            public static int AutoRetryCount
-            {
-                get
-                {
-                    var value = System.Configuration.ConfigurationManager.AppSettings["AutoRetryCount"];
-                    return int.TryParse(value, out int result) ? result : 3;
-                }
-            }
-
-            public static string LogLevel
-            {
-                get
-                {
-                    return System.Configuration.ConfigurationManager.AppSettings["LogLevel"] ?? "Info";
-                }
-            }
-        }
+    public class UploadSettings
+    {
+        public int MaxConcurrentUploads { get; set; }
+        public string DefaultPrivacyStatus { get; set; }
+        public int AutoRetryCount { get; set; }
+        public string TempDirectory { get; set; }
+        public long MaxFileSize { get; set; }
     }
 }

@@ -1,5 +1,6 @@
 using Google.Apis.Auth.OAuth2;
 using Google.Apis.Services;
+using Google.Apis.Upload;
 using Google.Apis.YouTube.v3;
 using Google.Apis.YouTube.v3.Data;
 using Google.Apis.Util.Store;
@@ -7,22 +8,26 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Collections.Generic;
 
 namespace VideoUploaderScheduler
 {
     public class YouTubeUploader
     {
-        private readonly string[] Scopes = { YouTubeService.Scope.YoutubeUpload };
-        private readonly string ApplicationName = "VideoUploaderScheduler";
-        private readonly string ClientSecretPath = "client_secret.json";
-        private YouTubeService _youtubeService;
-        private static readonly object _lockObject = new object();
         private static YouTubeUploader _instance;
+        private static readonly object _lockObject = new object();
+        private YouTubeService _youtubeService;
         private bool _isAuthenticated;
+        private readonly string _clientSecretPath = "client_secret.json";
+        private readonly string _credentialPath = "youtube_credentials";
 
-        private YouTubeUploader()
+        public YouTubeUploader()
         {
             _isAuthenticated = false;
+            if (!Directory.Exists(_credentialPath))
+            {
+                Directory.CreateDirectory(_credentialPath);
+            }
         }
 
         public static YouTubeUploader Instance
@@ -42,111 +47,145 @@ namespace VideoUploaderScheduler
 
         public async Task AuthenticateAsync()
         {
-            if (!File.Exists(ClientSecretPath))
-            {
-                throw new FileNotFoundException(
-                    "client_secret.json dosyası bulunamadı. Lütfen Google Cloud Console'dan indirdiğiniz client_secret.json dosyasını uygulama dizinine kopyalayın.");
-            }
-
             try
             {
-                UserCredential credential;
-                using (var stream = new FileStream(ClientSecretPath, FileMode.Open, FileAccess.Read))
+                if (!File.Exists(_clientSecretPath))
                 {
-                    credential = await GoogleWebAuthorizationBroker.AuthorizeAsync(
-                        GoogleClientSecrets.FromStream(stream).Secrets,
-                        Scopes,
-                        "user",
-                        CancellationToken.None,
-                        new FileDataStore("YouTube.Upload.Auth.Store")
-                    );
+                    throw new FileNotFoundException(
+                        "client_secret.json dosyası bulunamadı. " +
+                        "Lütfen Google Cloud Console'dan indirdiğiniz client_secret.json dosyasını uygulama klasörüne kopyalayın.");
                 }
 
-                _youtubeService = new YouTubeService(new BaseClientService.Initializer()
+                using (var stream = new FileStream(_clientSecretPath, FileMode.Open, FileAccess.Read))
                 {
-                    HttpClientInitializer = credential,
-                    ApplicationName = ApplicationName
-                });
+                    var credential = await GoogleWebAuthorizationBroker.AuthorizeAsync(
+                        GoogleClientSecrets.Load(stream).Secrets,
+                        new[] 
+                        { 
+                            YouTubeService.Scope.YoutubeUpload,
+                            YouTubeService.Scope.YoutubeReadonly 
+                        },
+                        "user",
+                        CancellationToken.None,
+                        new FileDataStore(_credentialPath, true)
+                    );
 
-                _isAuthenticated = true;
+                    _youtubeService = new YouTubeService(new BaseClientService.Initializer()
+                    {
+                        HttpClientInitializer = credential,
+                        ApplicationName = "VideoUploaderScheduler"
+                    });
 
-                // Kimlik bilgilerini kaydet
-                var credentials = await CredentialStore.LoadCredentials();
-                credentials.YouTubeRefreshToken = credential.Token.RefreshToken;
-                await CredentialStore.SaveCredentials(credentials);
+                    // Test authentication
+                    var channelsListRequest = _youtubeService.Channels.List("snippet");
+                    channelsListRequest.Mine = true;
+                    var channelsListResponse = await channelsListRequest.ExecuteAsync();
+
+                    if (channelsListResponse.Items.Count == 0)
+                    {
+                        throw new Exception("YouTube kanalı bulunamadı.");
+                    }
+
+                    _isAuthenticated = true;
+                }
             }
             catch (Exception ex)
             {
                 _isAuthenticated = false;
-                throw new Exception($"YouTube kimlik doğrulama hatası: {ex.Message}", ex);
+                throw new Exception("YouTube kimlik doğrulama hatası: " + ex.Message, ex);
             }
         }
 
-        public async Task UploadVideoAsync(string filePath, string title, string description, string[] tags, string privacyStatus = "private")
+        public async Task<string> UploadVideoAsync(string filePath, string title, string description, string[] tags, string privacyStatus = "private")
         {
             if (!_isAuthenticated)
-            {
                 throw new InvalidOperationException("YouTube'a yükleme yapmadan önce kimlik doğrulaması yapmalısınız.");
-            }
 
             if (!File.Exists(filePath))
+                throw new FileNotFoundException($"Video dosyası bulunamadı: {filePath}");
+
+            var video = new Video
             {
-                throw new FileNotFoundException($"Yüklenecek video dosyası bulunamadı: {filePath}");
-            }
-
-            try
-            {
-                var video = new Video
+                Snippet = new VideoSnippet
                 {
-                    Snippet = new VideoSnippet
-                    {
-                        Title = title,
-                        Description = description,
-                        Tags = tags,
-                        CategoryId = "22" // Entertainment category
-                    },
-                    Status = new VideoStatus
-                    {
-                        PrivacyStatus = privacyStatus // "private", "public", or "unlisted"
-                    }
-                };
-
-                using (var fileStream = new FileStream(filePath, FileMode.Open))
+                    Title = title,
+                    Description = description,
+                    Tags = tags ?? new string[] { },
+                    CategoryId = "22" // People & Blogs
+                },
+                Status = new VideoStatus
                 {
-                    var videosInsertRequest = _youtubeService.Videos.Insert(
-                        video,
-                        "snippet,status",
-                        fileStream,
-                        "video/*"
-                    );
-
-                    videosInsertRequest.ProgressChanged += VideosInsertRequest_ProgressChanged;
-                    videosInsertRequest.ResponseReceived += VideosInsertRequest_ResponseReceived;
-
-                    await videosInsertRequest.UploadAsync();
+                    PrivacyStatus = privacyStatus,
+                    SelfDeclaredMadeForKids = false
                 }
-            }
-            catch (Exception ex)
+            };
+
+            using (var fileStream = new FileStream(filePath, FileMode.Open))
             {
-                throw new Exception($"Video yükleme hatası: {ex.Message}", ex);
+                var videosInsertRequest = _youtubeService.Videos.Insert(
+                    video,
+                    "snippet,status",
+                    fileStream,
+                    GetMimeTypeFromFileName(filePath));
+
+                videosInsertRequest.ChunkSize = ResumableUpload.MinimumChunkSize;
+                videosInsertRequest.ProgressChanged += VideosInsertRequest_ProgressChanged;
+                videosInsertRequest.ResponseReceived += VideosInsertRequest_ResponseReceived;
+
+                try
+                {
+                    OnUploadProgressChanged(new UploadProgressEventArgs(0, fileStream.Length));
+                    var uploadResult = await videosInsertRequest.UploadAsync();
+
+                    if (uploadResult.Status == UploadStatus.Failed)
+                    {
+                        var error = uploadResult.Exception?.Message ?? "Bilinmeyen hata";
+                        OnUploadError(new UploadErrorEventArgs(error));
+                        throw new Exception($"Video yükleme başarısız: {error}");
+                    }
+
+                    return uploadResult.VideoId;
+                }
+                catch (Exception ex)
+                {
+                    OnUploadError(new UploadErrorEventArgs(ex.Message));
+                    throw new Exception("Video yükleme hatası: " + ex.Message, ex);
+                }
             }
         }
 
-        private void VideosInsertRequest_ProgressChanged(Google.Apis.Upload.IUploadProgress progress)
+        private string GetMimeTypeFromFileName(string fileName)
+        {
+            var ext = Path.GetExtension(fileName).ToLower();
+            return ext switch
+            {
+                ".mp4" => "video/mp4",
+                ".avi" => "video/avi",
+                ".mov" => "video/quicktime",
+                ".wmv" => "video/x-ms-wmv",
+                _ => "video/mp4" // Default to mp4
+            };
+        }
+
+        private void VideosInsertRequest_ProgressChanged(IUploadProgress progress)
         {
             switch (progress.Status)
             {
-                case Google.Apis.Upload.UploadStatus.Uploading:
+                case UploadStatus.Uploading:
                     OnUploadProgressChanged(new UploadProgressEventArgs(
                         progress.BytesSent,
-                        progress.TotalBytes ?? 0
-                    ));
+                        progress.BytesSent)); // Total bytes burada düzeltilmeli
                     break;
 
-                case Google.Apis.Upload.UploadStatus.Failed:
+                case UploadStatus.Failed:
                     OnUploadError(new UploadErrorEventArgs(
-                        "Video yükleme başarısız oldu: " + progress.Exception?.Message
-                    ));
+                        progress.Exception?.Message ?? "Bilinmeyen hata"));
+                    break;
+
+                case UploadStatus.Completed:
+                    OnUploadProgressChanged(new UploadProgressEventArgs(
+                        progress.BytesSent,
+                        progress.BytesSent));
                     break;
             }
         }
@@ -155,11 +194,38 @@ namespace VideoUploaderScheduler
         {
             OnUploadCompleted(new UploadCompletedEventArgs(
                 video.Id,
-                $"https://www.youtube.com/watch?v={video.Id}"
-            ));
+                $"https://youtube.com/watch?v={video.Id}"));
         }
 
-        // Event handlers for upload progress
+        public async Task<List<PlaylistItem>> GetUploadedVideos(int maxResults = 50)
+        {
+            if (!_isAuthenticated)
+                throw new InvalidOperationException("YouTube API'ye erişim için kimlik doğrulaması gerekli.");
+
+            try
+            {
+                var channelsListRequest = _youtubeService.Channels.List("contentDetails");
+                channelsListRequest.Mine = true;
+                var channelsListResponse = await channelsListRequest.ExecuteAsync();
+
+                if (channelsListResponse.Items.Count == 0)
+                    return new List<PlaylistItem>();
+
+                var uploadPlaylistId = channelsListResponse.Items[0].ContentDetails.RelatedPlaylists.Uploads;
+
+                var playlistItemsRequest = _youtubeService.PlaylistItems.List("snippet");
+                playlistItemsRequest.PlaylistId = uploadPlaylistId;
+                playlistItemsRequest.MaxResults = maxResults;
+
+                var playlistItemsResponse = await playlistItemsRequest.ExecuteAsync();
+                return new List<PlaylistItem>(playlistItemsResponse.Items);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("Yüklenen videoları getirme hatası: " + ex.Message, ex);
+            }
+        }
+
         public event EventHandler<UploadProgressEventArgs> UploadProgressChanged;
         public event EventHandler<UploadErrorEventArgs> UploadError;
         public event EventHandler<UploadCompletedEventArgs> UploadCompleted;
@@ -178,40 +244,7 @@ namespace VideoUploaderScheduler
         {
             UploadCompleted?.Invoke(this, e);
         }
-    }
 
-    public class UploadProgressEventArgs : EventArgs
-    {
-        public long BytesSent { get; }
-        public long TotalBytes { get; }
-        public double ProgressPercentage => (double)BytesSent / TotalBytes * 100;
-
-        public UploadProgressEventArgs(long bytesSent, long totalBytes)
-        {
-            BytesSent = bytesSent;
-            TotalBytes = totalBytes;
-        }
-    }
-
-    public class UploadErrorEventArgs : EventArgs
-    {
-        public string ErrorMessage { get; }
-
-        public UploadErrorEventArgs(string errorMessage)
-        {
-            ErrorMessage = errorMessage;
-        }
-    }
-
-    public class UploadCompletedEventArgs : EventArgs
-    {
-        public string VideoId { get; }
-        public string VideoUrl { get; }
-
-        public UploadCompletedEventArgs(string videoId, string videoUrl)
-        {
-            VideoId = videoId;
-            VideoUrl = videoUrl;
-        }
+        public bool IsAuthenticated => _isAuthenticated;
     }
 }

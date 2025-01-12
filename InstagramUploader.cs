@@ -1,28 +1,35 @@
+using System;
+using System.Threading.Tasks;
+using System.IO;
+using Microsoft.Extensions.Logging;
+using InstagramApiSharp;
 using InstagramApiSharp.API;
 using InstagramApiSharp.API.Builder;
 using InstagramApiSharp.Classes;
+using InstagramApiSharp.Classes.Models;
 using InstagramApiSharp.Logger;
-using System;
-using System.IO;
-using System.Threading.Tasks;
 
 namespace VideoUploaderScheduler
 {
     public class InstagramUploader
     {
-        private IInstaApi _instaApi;
-        private static readonly object _lockObject = new object();
         private static InstagramUploader _instance;
+        private static readonly object _lockObject = new object();
+        private readonly ILogger<InstagramUploader> _logger;
+        private IInstaApi _instaApi;
         private bool _isAuthenticated;
-        private readonly string _sessionFolder = "InstagramSessions";
+        private readonly string _sessionPath;
 
-        private InstagramUploader()
+        public event EventHandler<UploadProgressEventArgs> UploadProgressChanged;
+        public event EventHandler<UploadErrorEventArgs> UploadError;
+        public event EventHandler<UploadCompletedEventArgs> UploadCompleted;
+        public event EventHandler<UploadStartedEventArgs> UploadStarted;
+
+        private InstagramUploader(ILogger<InstagramUploader> logger)
         {
+            _logger = logger;
+            _sessionPath = Path.Combine("Config", "instagram_session.bin");
             _isAuthenticated = false;
-            if (!Directory.Exists(_sessionFolder))
-            {
-                Directory.CreateDirectory(_sessionFolder);
-            }
         }
 
         public static InstagramUploader Instance
@@ -33,17 +40,22 @@ namespace VideoUploaderScheduler
                 {
                     lock (_lockObject)
                     {
-                        _instance ??= new InstagramUploader();
+                        _instance ??= new InstagramUploader(
+                            new LoggerFactory().CreateLogger<InstagramUploader>());
                     }
                 }
                 return _instance;
             }
         }
 
+        public bool IsAuthenticated => _isAuthenticated;
+
         public async Task AuthenticateAsync(string username, string password)
         {
             try
             {
+                _logger.LogInformation("Instagram kimlik doğrulama başlatılıyor...");
+
                 var userSession = new UserSessionData
                 {
                     UserName = username,
@@ -52,151 +64,204 @@ namespace VideoUploaderScheduler
 
                 _instaApi = InstaApiBuilder.CreateBuilder()
                     .SetUser(userSession)
-                    .UseLogger(new DebugLogger(LogLevel.Exceptions))
+                    .UseLogger(new DebugLogger(LogLevel.All))
                     .Build();
 
-                // Önceki oturum verisi varsa yükle
-                var sessionFile = Path.Combine(_sessionFolder, $"{username}_session.bin");
-                if (File.Exists(sessionFile))
+                if (File.Exists(_sessionPath))
                 {
-                    var sessionData = await File.ReadAllBytesAsync(sessionFile);
-                    await _instaApi.LoadStateDataFromStreamAsync(new MemoryStream(sessionData));
+                    _logger.LogInformation("Önceki oturum bulundu, yükleniyor...");
+                    await LoadSessionAsync();
                 }
 
                 if (!_instaApi.IsUserAuthenticated)
                 {
-                    // Login
+                    _logger.LogInformation("Yeni oturum açılıyor...");
                     var loginResult = await _instaApi.LoginAsync();
                     if (!loginResult.Succeeded)
                     {
-                        throw new Exception($"Instagram login hatası: {loginResult.Info.Message}");
+                        throw new Exception($"Instagram girişi başarısız: {loginResult.Info.Message}");
                     }
-
-                    // Oturum verilerini kaydet
-                    var state = _instaApi.GetStateDataAsStream();
-                    using (var fileStream = File.Create(sessionFile))
-                    {
-                        state.Seek(0, SeekOrigin.Begin);
-                        await state.CopyToAsync(fileStream);
-                    }
+                    await SaveSessionAsync();
                 }
 
                 _isAuthenticated = true;
-
-                // Kimlik bilgilerini kaydet
-                var credentials = await CredentialStore.LoadCredentials();
-                credentials.InstagramUsername = username;
-                credentials.InstagramSessionFile = sessionFile;
-                await CredentialStore.SaveCredentials(credentials);
+                _logger.LogInformation("Instagram kimlik doğrulama başarılı");
             }
             catch (Exception ex)
             {
                 _isAuthenticated = false;
-                throw new Exception($"Instagram kimlik doğrulama hatası: {ex.Message}", ex);
+                _logger.LogError(ex, "Instagram kimlik doğrulama hatası");
+                throw new Exception("Instagram kimlik doğrulama başarısız", ex);
             }
         }
 
-        public async Task UploadMediaAsync(string filePath, string caption)
+        private async Task LoadSessionAsync()
+        {
+            try
+            {
+                var sessionData = await File.ReadAllBytesAsync(_sessionPath);
+                await _instaApi.LoadStateDataFromStringAsync(Convert.ToBase64String(sessionData));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Oturum yüklenirken hata oluştu");
+                throw;
+            }
+        }
+
+        private async Task SaveSessionAsync()
+        {
+            try
+            {
+                var sessionData = await _instaApi.GetStateDataAsStringAsync();
+                await File.WriteAllBytesAsync(_sessionPath, 
+                    Convert.FromBase64String(sessionData));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Oturum kaydedilirken hata oluştu");
+                throw;
+            }
+        }
+
+        public async Task<string> UploadMediaAsync(string filePath, string caption, InstagramUploadOptions options = null)
         {
             if (!_isAuthenticated)
-            {
                 throw new InvalidOperationException("Instagram'a yükleme yapmadan önce kimlik doğrulaması yapmalısınız.");
-            }
 
-            if (!File.Exists(filePath))
-            {
-                throw new FileNotFoundException($"Yüklenecek medya dosyası bulunamadı: {filePath}");
-            }
+            options ??= new InstagramUploadOptions();
+            var fileInfo = new FileInfo(filePath);
+            var mediaType = GetMediaType(filePath);
 
             try
             {
-                var extension = Path.GetExtension(filePath).ToLower();
-                var isVideo = extension == ".mp4" || extension == ".mov";
+                OnUploadStarted(new UploadStartedEventArgs(
+                    Guid.NewGuid().ToString(),
+                    "Instagram",
+                    filePath,
+                    fileInfo.Length));
 
-                if (isVideo)
-                {
-                    await UploadVideoAsync(filePath, caption);
-                }
-                else
-                {
-                    await UploadPhotoAsync(filePath, caption);
-                }
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"Medya yükleme hatası: {ex.Message}", ex);
-            }
-        }
-
-        private async Task UploadPhotoAsync(string photoPath, string caption)
-        {
-            try
-            {
-                OnUploadProgressChanged(new UploadProgressEventArgs(0, 100));
-
-                var mediaUploadResult = await _instaApi.MediaProcessor.UploadPhotoAsync(photoPath, caption);
+                IResult<IMedia> result;
                 
-                if (!mediaUploadResult.Succeeded)
+                switch (mediaType)
                 {
-                    throw new Exception($"Fotoğraf yükleme başarısız: {mediaUploadResult.Info.Message}");
+                    case MediaType.Video:
+                        result = await UploadVideoAsync(filePath, caption, options);
+                        break;
+                    
+                    case MediaType.Image:
+                        result = await UploadImageAsync(filePath, caption, options);
+                        break;
+                    
+                    default:
+                        throw new NotSupportedException("Desteklenmeyen medya türü");
                 }
 
-                OnUploadProgressChanged(new UploadProgressEventArgs(100, 100));
+                if (!result.Succeeded)
+                {
+                    throw new Exception($"Yükleme başarısız: {result.Info.Message}");
+                }
+
                 OnUploadCompleted(new UploadCompletedEventArgs(
-                    mediaUploadResult.Value.Pk.ToString(),
-                    $"https://instagram.com/p/{mediaUploadResult.Value.Code}"
-                ));
+                    result.Value.Pk,
+                    result.Value.Code,
+                    platform: "Instagram"));
+
+                return result.Value.Pk;
             }
             catch (Exception ex)
             {
-                OnUploadError(new UploadErrorEventArgs(ex.Message));
+                OnUploadError(new UploadErrorEventArgs(
+                    ex.Message,
+                    platform: "Instagram",
+                    exception: ex));
                 throw;
             }
         }
 
-        private async Task UploadVideoAsync(string videoPath, string caption)
+        private async Task<IResult<IMedia>> UploadVideoAsync(
+            string filePath, 
+            string caption, 
+            InstagramUploadOptions options)
         {
             try
             {
-                OnUploadProgressChanged(new UploadProgressEventArgs(0, 100));
-
-                var mediaUploadResult = await _instaApi.MediaProcessor.UploadVideoAsync(videoPath, caption);
-                
-                if (!mediaUploadResult.Succeeded)
+                var video = new InstaVideoUpload
                 {
-                    throw new Exception($"Video yükleme başarısız: {mediaUploadResult.Info.Message}");
-                }
+                    Video = new InstaVideo(filePath, 0, 0),
+                    Caption = FormatCaption(caption, options)
+                };
 
-                OnUploadProgressChanged(new UploadProgressEventArgs(100, 100));
-                OnUploadCompleted(new UploadCompletedEventArgs(
-                    mediaUploadResult.Value.Pk.ToString(),
-                    $"https://instagram.com/p/{mediaUploadResult.Value.Code}"
-                ));
+                var progress = new Progress<InstaUploaderProgress>(p =>
+                {
+                    OnUploadProgressChanged(new UploadProgressEventArgs(
+                        p.UploadedBytes,
+                        p.TotalBytes,
+                        platform: "Instagram"));
+                });
+
+                return options.IsReel ?
+                    await _instaApi.MediaProcessor.UploadReelVideoAsync(video, progress) :
+                    await _instaApi.MediaProcessor.UploadVideoAsync(video, progress);
             }
             catch (Exception ex)
             {
-                OnUploadError(new UploadErrorEventArgs(ex.Message));
+                _logger.LogError(ex, "Video yükleme hatası");
                 throw;
             }
         }
 
-        public async Task CheckAuthenticationStatus()
+        private async Task<IResult<IMedia>> UploadImageAsync(
+            string filePath, 
+            string caption, 
+            InstagramUploadOptions options)
         {
-            if (_instaApi != null)
+            try
             {
-                var currentUser = await _instaApi.UserProcessor.GetCurrentUserAsync();
-                _isAuthenticated = currentUser.Succeeded;
+                var image = new InstaImageUpload
+                {
+                    Uri = filePath,
+                    Caption = FormatCaption(caption, options)
+                };
+
+                return await _instaApi.MediaProcessor.UploadPhotoAsync(image);
             }
-            else
+            catch (Exception ex)
             {
-                _isAuthenticated = false;
+                _logger.LogError(ex, "Resim yükleme hatası");
+                throw;
             }
         }
 
-        // Event handlers for upload progress
-        public event EventHandler<UploadProgressEventArgs> UploadProgressChanged;
-        public event EventHandler<UploadErrorEventArgs> UploadError;
-        public event EventHandler<UploadCompletedEventArgs> UploadCompleted;
+        private string FormatCaption(string caption, InstagramUploadOptions options)
+        {
+            var formattedCaption = caption;
+
+            if (options.Hashtags?.Length > 0)
+            {
+                formattedCaption += "\n\n" + string.Join(" ", 
+                    options.Hashtags.Select(tag => $"#{tag.TrimStart('#')}"));
+            }
+
+            if (options.MentionUsers?.Length > 0)
+            {
+                formattedCaption += "\n\n" + string.Join(" ", 
+                    options.MentionUsers.Select(user => $"@{user.TrimStart('@')}"));
+            }
+
+            return formattedCaption;
+        }
+
+        private MediaType GetMediaType(string filePath)
+        {
+            var extension = Path.GetExtension(filePath).ToLower();
+            return extension switch
+            {
+                ".mp4" => MediaType.Video,
+                ".jpg" or ".jpeg" or ".png" => MediaType.Image,
+                _ => throw new NotSupportedException($"Desteklenmeyen dosya türü: {extension}")
+            };
+        }
 
         protected virtual void OnUploadProgressChanged(UploadProgressEventArgs e)
         {
@@ -213,6 +278,15 @@ namespace VideoUploaderScheduler
             UploadCompleted?.Invoke(this, e);
         }
 
-        public bool IsAuthenticated => _isAuthenticated;
+        protected virtual void OnUploadStarted(UploadStartedEventArgs e)
+        {
+            UploadStarted?.Invoke(this, e);
+        }
+
+        private enum MediaType
+        {
+            Image,
+            Video
+        }
     }
 }

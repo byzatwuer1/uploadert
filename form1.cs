@@ -1,202 +1,283 @@
 using System;
 using System.Windows.Forms;
-using System.IO;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+using System.IO;
+using System.Drawing;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace VideoUploaderScheduler
 {
     public partial class Form1 : Form
     {
+        private readonly ILogger<Form1> _logger;
         private readonly UploadScheduler _scheduler;
-        private readonly List<ScheduledUpload> _scheduledUploads;
+        private readonly CredentialStore _credentialStore;
+        private readonly YouTubeUploader _youtubeUploader;
+        private readonly InstagramUploader _instagramUploader;
+        private bool _isAuthenticating;
 
-        public Form1()
+        public Form1(
+            ILogger<Form1> logger,
+            UploadScheduler scheduler,
+            CredentialStore credentialStore,
+            YouTubeUploader youtubeUploader,
+            InstagramUploader instagramUploader)
         {
             InitializeComponent();
-            _scheduler = new UploadScheduler();
-            _scheduledUploads = new List<ScheduledUpload>();
-            
-            // Form yüklendiğinde çalışacak event
-            this.Load += Form1_Load;
-            
-            // Buton click eventlerini bağla
-            btnYouTubeAuth.Click += BtnYouTubeAuth_Click;
-            btnInstagramAuth.Click += BtnInstagramAuth_Click;
+
+            _logger = logger;
+            _scheduler = scheduler;
+            _credentialStore = credentialStore;
+            _youtubeUploader = youtubeUploader;
+            _instagramUploader = instagramUploader;
+
+            InitializeFormComponents();
+            LoadSavedCredentials();
+        }
+
+        private void InitializeFormComponents()
+        {
+            // Platform seçim combobox'ını doldur
+            cmbPlatform.Items.AddRange(new object[] { "YouTube", "Instagram" });
+            cmbPlatform.SelectedIndex = 0;
+
+            // Event handlers
             btnBrowse.Click += BtnBrowse_Click;
             btnScheduleUpload.Click += BtnScheduleUpload_Click;
-
-            // Platform seçimi değiştiğinde
+            btnYouTubeAuth.Click += BtnYouTubeAuth_Click;
+            btnInstagramAuth.Click += BtnInstagramAuth_Click;
             cmbPlatform.SelectedIndexChanged += CmbPlatform_SelectedIndexChanged;
 
-            // Minimum tarih ayarı
+            // ListView kolonları
+            lstScheduledUploads.View = View.Details;
+            lstScheduledUploads.Columns.AddRange(new ColumnHeader[]
+            {
+                new ColumnHeader { Text = "Platform", Width = 100 },
+                new ColumnHeader { Text = "Dosya", Width = 200 },
+                new ColumnHeader { Text = "Başlık", Width = 200 },
+                new ColumnHeader { Text = "Planlanan Zaman", Width = 150 },
+                new ColumnHeader { Text = "Durum", Width = 100 }
+            });
+
+            // Tarih seçici minimum değeri
             dateTimePickerUpload.MinDate = DateTime.Now;
+
+            // Form yüklenme eventi
+            this.Load += Form1_Load;
+
+            // Timer for refreshing uploads list
+            var refreshTimer = new Timer
+            {
+                Interval = 30000 // 30 seconds
+            };
+            refreshTimer.Tick += RefreshTimer_Tick;
+            refreshTimer.Start();
         }
 
         private async void Form1_Load(object sender, EventArgs e)
         {
             try
             {
-                await _scheduler.StartAsync();
-                await CheckAuthenticationStatus();
+                await RefreshScheduledUploadsList();
+                UpdateAuthenticationStatus();
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Başlatma hatası: {ex.Message}", "Hata", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                _logger.LogError(ex, "Form yüklenirken hata oluştu");
+                MessageBox.Show(
+                    "Form yüklenirken bir hata oluştu: " + ex.Message,
+                    "Hata",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
             }
         }
 
-        private async Task CheckAuthenticationStatus()
-        {
-            var credentials = await CredentialStore.LoadCredentials();
-
-            // YouTube durumunu kontrol et
-            if (!string.IsNullOrEmpty(credentials.YouTubeRefreshToken))
-            {
-                lblYouTubeStatus.Text = "✓ YouTube Bağlantısı Aktif";
-                lblYouTubeStatus.ForeColor = System.Drawing.Color.Green;
-            }
-            else
-            {
-                lblYouTubeStatus.Text = "✗ YouTube Bağlantısı Yok";
-                lblYouTubeStatus.ForeColor = System.Drawing.Color.Red;
-            }
-
-            // Instagram durumunu kontrol et
-            if (!string.IsNullOrEmpty(credentials.InstagramSessionFile))
-            {
-                lblInstagramStatus.Text = "✓ Instagram Bağlantısı Aktif";
-                lblInstagramStatus.ForeColor = System.Drawing.Color.Green;
-            }
-            else
-            {
-                lblInstagramStatus.Text = "✗ Instagram Bağlantısı Yok";
-                lblInstagramStatus.ForeColor = System.Drawing.Color.Red;
-            }
-        }
-
-        private async void BtnYouTubeAuth_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                btnYouTubeAuth.Enabled = false;
-                btnYouTubeAuth.Text = "Bağlanıyor...";
-
-                await YouTubeUploader.Instance.AuthenticateAsync();
-                
-                await CheckAuthenticationStatus();
-                MessageBox.Show("YouTube kimlik doğrulama başarılı!", "Başarılı", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"YouTube kimlik doğrulama hatası: {ex.Message}", "Hata", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-            finally
-            {
-                btnYouTubeAuth.Enabled = true;
-                btnYouTubeAuth.Text = "YouTube'a Bağlan";
-            }
-        }
-
-        private async void BtnInstagramAuth_Click(object sender, EventArgs e)
-        {
-            if (string.IsNullOrWhiteSpace(txtInstagramUsername.Text) || 
-                string.IsNullOrWhiteSpace(txtInstagramPassword.Text))
-            {
-                MessageBox.Show("Lütfen Instagram kullanıcı adı ve şifrenizi girin.", "Uyarı", 
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-
-            try
-            {
-                btnInstagramAuth.Enabled = false;
-                btnInstagramAuth.Text = "Bağlanıyor...";
-
-                await InstagramUploader.Instance.AuthenticateAsync(
-                    txtInstagramUsername.Text.Trim(),
-                    txtInstagramPassword.Text.Trim()
-                );
-
-                await CheckAuthenticationStatus();
-                MessageBox.Show("Instagram kimlik doğrulama başarılı!", "Başarılı", 
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-                
-                // Başarılı girişten sonra şifreyi temizle
-                txtInstagramPassword.Clear();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Instagram kimlik doğrulama hatası: {ex.Message}", "Hata", 
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-            finally
-            {
-                btnInstagramAuth.Enabled = true;
-                btnInstagramAuth.Text = "Instagram'a Bağlan";
-            }
-        }
-
-        private void BtnBrowse_Click(object sender, EventArgs e)
+        private async void BtnBrowse_Click(object sender, EventArgs e)
         {
             using (OpenFileDialog openFileDialog = new OpenFileDialog())
             {
-                openFileDialog.Filter = "Video Dosyaları|*.mp4;*.avi;*.mov|Resim Dosyaları|*.jpg;*.jpeg;*.png|Tüm Dosyalar|*.*";
+                openFileDialog.Filter = "Video Dosyaları|*.mp4;*.avi;*.mov;*.wmv|Tüm Dosyalar|*.*";
                 openFileDialog.FilterIndex = 1;
 
                 if (openFileDialog.ShowDialog() == DialogResult.OK)
                 {
                     txtFilePath.Text = openFileDialog.FileName;
+                    txtTitle.Text = Path.GetFileNameWithoutExtension(openFileDialog.FileName);
                 }
             }
         }
 
-        private void CmbPlatform_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            // Instagram seçiliyse tag alanını gizle
-            txtTags.Enabled = cmbPlatform.SelectedItem.ToString() == "YouTube";
-        }
-
         private async void BtnScheduleUpload_Click(object sender, EventArgs e)
         {
-            if (!ValidateUploadForm())
-                return;
+            if (ValidateUploadInputs())
+            {
+                try
+                {
+                    btnScheduleUpload.Enabled = false;
+
+                    var uploadInfo = new UploadInfo
+                    {
+                        FilePath = txtFilePath.Text,
+                        Title = txtTitle.Text,
+                        Description = txtDescription.Text,
+                        Platform = cmbPlatform.SelectedItem.ToString(),
+                        ScheduledTime = dateTimePickerUpload.Value
+                    };
+
+                    await _scheduler.ScheduleJobAsync(uploadInfo);
+
+                    MessageBox.Show(
+                        "Yükleme başarıyla planlandı!",
+                        "Başarılı",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+
+                    ClearUploadForm();
+                    await RefreshScheduledUploadsList();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Yükleme planlanırken hata oluştu");
+                    MessageBox.Show(
+                        "Yükleme planlanırken bir hata oluştu: " + ex.Message,
+                        "Hata",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
+                }
+                finally
+                {
+                    btnScheduleUpload.Enabled = true;
+                }
+            }
+        }
+
+        private async void BtnYouTubeAuth_Click(object sender, EventArgs e)
+        {
+            if (_isAuthenticating) return;
 
             try
             {
-                btnScheduleUpload.Enabled = false;
-                string platform = cmbPlatform.SelectedItem.ToString();
-                string[] tags = platform == "YouTube" ? txtTags.Text.Split(',') : null;
+                _isAuthenticating = true;
+                btnYouTubeAuth.Enabled = false;
+                lblYouTubeStatus.Text = "Kimlik doğrulanıyor...";
 
-                await _scheduler.ScheduleUpload(
-                    dateTimePickerUpload.Value,
-                    platform,
-                    txtFilePath.Text.Trim(),
-                    txtTitle.Text.Trim(),
-                    txtDescription.Text.Trim(),
-                    tags
-                );
+                await _youtubeUploader.AuthenticateAsync();
 
-                // ListView'e ekle
-                AddScheduledUploadToList(platform, txtFilePath.Text, txtTitle.Text, dateTimePickerUpload.Value);
-
-                MessageBox.Show("Yükleme başarıyla planlandı!", "Başarılı", 
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-                
-                ClearUploadForm();
+                lblYouTubeStatus.Text = "Bağlandı";
+                lblYouTubeStatus.ForeColor = Color.Green;
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Yükleme planlanırken hata oluştu: {ex.Message}", "Hata", 
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                _logger.LogError(ex, "YouTube kimlik doğrulama hatası");
+                lblYouTubeStatus.Text = "Bağlantı hatası";
+                lblYouTubeStatus.ForeColor = Color.Red;
+                MessageBox.Show(
+                    "YouTube kimlik doğrulama hatası: " + ex.Message,
+                    "Hata",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
             }
             finally
             {
-                btnScheduleUpload.Enabled = true;
+                _isAuthenticating = false;
+                btnYouTubeAuth.Enabled = true;
             }
         }
 
-        private bool ValidateUploadForm()
+        private async void BtnInstagramAuth_Click(object sender, EventArgs e)
+        {
+            if (_isAuthenticating) return;
+
+            try
+            {
+                _isAuthenticating = true;
+                btnInstagramAuth.Enabled = false;
+                lblInstagramStatus.Text = "Kimlik doğrulanıyor...";
+
+                await _instagramUploader.AuthenticateAsync(
+                    txtInstagramUsername.Text,
+                    txtInstagramPassword.Text);
+
+                lblInstagramStatus.Text = "Bağlandı";
+                lblInstagramStatus.ForeColor = Color.Green;
+
+                // Save credentials
+                await SaveInstagramCredentials();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Instagram kimlik doğrulama hatası");
+                lblInstagramStatus.Text = "Bağlantı hatası";
+                lblInstagramStatus.ForeColor = Color.Red;
+                MessageBox.Show(
+                    "Instagram kimlik doğrulama hatası: " + ex.Message,
+                    "Hata",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+            finally
+            {
+                _isAuthenticating = false;
+                btnInstagramAuth.Enabled = true;
+            }
+        }
+
+        private async Task SaveInstagramCredentials()
+        {
+            var credentials = await _credentialStore.LoadCredentials();
+            credentials.InstagramUsername = txtInstagramUsername.Text;
+            credentials.InstagramPassword = txtInstagramPassword.Text;
+            await _credentialStore.SaveCredentials(credentials);
+        }
+
+        private async void RefreshTimer_Tick(object sender, EventArgs e)
+        {
+            await RefreshScheduledUploadsList();
+        }
+
+        private async Task RefreshScheduledUploadsList()
+        {
+            try
+            {
+                var uploads = await _scheduler.GetScheduledUploads();
+                UpdateUploadsList(uploads);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Yükleme listesi yenilenirken hata oluştu");
+            }
+        }
+
+        private void UpdateUploadsList(ScheduledUploadInfo[] uploads)
+        {
+            lstScheduledUploads.Items.Clear();
+
+            foreach (var upload in uploads)
+            {
+                var item = new ListViewItem(new[]
+                {
+                    upload.Platform,
+                    Path.GetFileName(upload.FilePath),
+                    upload.Title,
+                    upload.ScheduledTime.ToString("g"),
+                    GetUploadStatus(upload)
+                });
+
+                lstScheduledUploads.Items.Add(item);
+            }
+        }
+
+        private string GetUploadStatus(ScheduledUploadInfo upload)
+        {
+            if (upload.ScheduledTime > DateTime.Now)
+                return "Bekliyor";
+            else
+                return "İşleniyor";
+        }
+
+        private bool ValidateUploadInputs()
         {
             if (string.IsNullOrWhiteSpace(txtFilePath.Text))
             {
@@ -216,25 +297,13 @@ namespace VideoUploaderScheduler
                 return false;
             }
 
-            if (cmbPlatform.SelectedItem == null)
+            if (dateTimePickerUpload.Value <= DateTime.Now)
             {
-                MessageBox.Show("Lütfen bir platform seçin.", "Uyarı", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Lütfen gelecekte bir tarih seçin.", "Uyarı", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return false;
             }
 
             return true;
-        }
-
-        private void AddScheduledUploadToList(string platform, string filePath, string title, DateTime scheduledTime)
-        {
-            var item = new ListViewItem(new[] {
-                platform,
-                Path.GetFileName(filePath),
-                title,
-                scheduledTime.ToString("dd.MM.yyyy HH:mm")
-            });
-
-            lstScheduledUploads.Items.Add(item);
         }
 
         private void ClearUploadForm()
@@ -242,25 +311,49 @@ namespace VideoUploaderScheduler
             txtFilePath.Clear();
             txtTitle.Clear();
             txtDescription.Clear();
-            txtTags.Clear();
-            dateTimePickerUpload.Value = DateTime.Now;
-            cmbPlatform.SelectedIndex = -1;
+            dateTimePickerUpload.Value = DateTime.Now.AddMinutes(5);
+        }
+
+        private async void LoadSavedCredentials()
+        {
+            try
+            {
+                var credentials = await _credentialStore.LoadCredentials();
+                txtInstagramUsername.Text = credentials.InstagramUsername;
+                txtInstagramPassword.Text = credentials.InstagramPassword;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Kayıtlı kimlik bilgileri yüklenirken hata oluştu");
+            }
+        }
+
+        private void UpdateAuthenticationStatus()
+        {
+            lblYouTubeStatus.Text = _youtubeUploader.IsAuthenticated ? "Bağlandı" : "Bağlı değil";
+            lblYouTubeStatus.ForeColor = _youtubeUploader.IsAuthenticated ? Color.Green : Color.Red;
+
+            lblInstagramStatus.Text = _instagramUploader.IsAuthenticated ? "Bağlandı" : "Bağlı değil";
+            lblInstagramStatus.ForeColor = _instagramUploader.IsAuthenticated ? Color.Green : Color.Red;
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             base.OnFormClosing(e);
-            _scheduler.StopAsync().Wait();
-        }
-    }
+            
+            if (e.CloseReason == CloseReason.UserClosing)
+            {
+                var result = MessageBox.Show(
+                    "Uygulamayı kapatmak istiyor musunuz? Planlanmış yüklemeler iptal edilecek.",
+                    "Onay",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question);
 
-    public class ScheduledUpload
-    {
-        public string Platform { get; set; }
-        public string FilePath { get; set; }
-        public string Title { get; set; }
-        public string Description { get; set; }
-        public string[] Tags { get; set; }
-        public DateTime ScheduledTime { get; set; }
+                if (result == DialogResult.No)
+                {
+                    e.Cancel = true;
+                }
+            }
+        }
     }
 }
